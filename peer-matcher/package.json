@@ -1,0 +1,16 @@
+{
+  "name": "peer-matcher",
+  "version": "0.0.0",
+  "description": "",
+  "main": "./src/server.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node ./src/server.js"
+  },
+  "author": "Chris Dukakis<chrisdukakis@gmail.com>",
+  "dependencies": {
+    "wrtc": "^0.4.7",
+    "ws": "^8.12.0"
+  }
+}
