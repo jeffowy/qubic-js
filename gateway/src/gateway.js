@@ -83,7 +83,7 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
   const channel = function ({ iceServers }, i) {
     let pc
     const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
-    const socket = new WebSocket(`ws://${PEER_MATCHER}`);
+    const socket = new WebSocket(`wss://${PEER_MATCHER}`);
   
     socket.binaryType = 'arraybuffer';
   
@@ -245,6 +245,8 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
       requestComputors()
     }, 5000);
   });
+  
+  socket.on('error', function () {});
 
   socket.on('data', function (data) {
     let byteOffset2 = 0;
