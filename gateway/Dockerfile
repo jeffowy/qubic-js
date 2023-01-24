@@ -12,5 +12,4 @@ COPY . .
 RUN pnpm fetch --prod \
     && pnpm i --prod
 
-EXPOSE 8080
 CMD [ "node", "./src/gateway.js" ]
