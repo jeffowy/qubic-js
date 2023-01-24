@@ -1,5 +1,11 @@
 import { WebSocketServer } from 'ws';
 
+const PORT = process.env.PORT || 8081;
+
+const MAX_INNACTIVITY_DURATION = process.env.MAX_INNACTIVITY_DURATION || 10 * 1000;
+const MIN_ENQUEUE_DELAY = process.env.MIN_ENQUEUE_DELAY || 0;
+const MAX_ENQUEUE_DELAY = process.env.MAX_ENQUEUE_DELAY || 100;
+
 const SIGNAL_TYPES = {
   ROLE: 0,
   ICE_CANDIDATE: 1,
@@ -22,10 +28,10 @@ export const delayQueue = (A, B) => {
 export const server = function () {
   let cons = 0;
   let rejects = 0;
-  const queue = delayQueue(0, 100);
+  const queue = delayQueue(MIN_ENQUEUE_DELAY, MAX_ENQUEUE_DELAY);
   const buffer = [];
   const wss = new WebSocketServer({
-    port: 8082,
+    port: PORT,
   });
 
   const match = function (a) {
@@ -60,7 +66,7 @@ export const server = function () {
                     a.resolve = resolve;
                     a.reject = reject;
                     buffer.push(a);
-                    return
+                    return;
                   }
                 }
               }
@@ -89,7 +95,7 @@ export const server = function () {
   
       socket.isAlive = false;
     }
-  }, 10000);
+  }, MAX_INNACTIVITY_DURATION);
   
   wss.on('close', function close() {
     clearInterval(interval);
