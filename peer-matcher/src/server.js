@@ -30,6 +30,7 @@ export const server = function () {
   let rejects = 0;
   const queue = delayQueue(MIN_ENQUEUE_DELAY, MAX_ENQUEUE_DELAY);
   const buffer = [];
+  const matches = new Set();
   const wss = new WebSocketServer({
     port: PORT,
   });
@@ -52,7 +53,8 @@ export const server = function () {
                   if (b.closed === true) {
                     b.reject();
                     buffer.splice(i, 1);
-                  } else if (b.remoteAddress !== a.remoteAddress) {
+                  } else if (b.remoteAddress !== a.remoteAddress && matches.has([a.remoteAddress, b.remoteAddress].sort().join('-')) === false) {
+                    matches.add([a.remoteAddress, b.remoteAddress].sort().join('-'));
                     buffer.splice(i, 1);
                     // Assign roles
                     a.role = 1; // Caller makes SDP offer
@@ -139,6 +141,7 @@ export const server = function () {
 
     socket.on('close', function close() {
       socket.closed = true;
+      matches.delete([socket.remoteAddress, socket.peer.remoteAddress].sort().join('-'));
       let i = buffer.indexOf(socket);
       if (i > -1) {
         buffer.splice(i, 1);
