@@ -141,7 +141,9 @@ export const server = function () {
 
     socket.on('close', function close() {
       socket.closed = true;
-      matches.delete([socket.remoteAddress, socket.peer.remoteAddress].sort().join('-'));
+      if (socket.peer !== undefined) {
+        matches.delete([socket.remoteAddress, socket.peer.remoteAddress].sort().join('-'));
+      }
       let i = buffer.indexOf(socket);
       if (i > -1) {
         buffer.splice(i, 1);
