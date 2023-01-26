@@ -5,24 +5,25 @@ import WebSocket from "ws";
 import wrtc from 'wrtc';
 
 const QUBIC_PORT = process.env.QUBIC_PORT || 21841;
-const QUBIC_PROTOCOL = process.env.QUBIC_PROTOCOL || 83;
+const QUBIC_PROTOCOL = process.env.QUBIC_PROTOCOL || 84;
 const COMPUTOR = process.env.COMPUTOR || '0.0.0.0';
+const COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER = 1000;
 
-const NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCCESS = 3;
-const MAX_WEBRTC_CONNECTION_ATTEMPT_DURATION = 3 * 1000;
-const MAX_WEBRTC_CONNECTION_DURATION = 3 * 60 * 1000;
-// change accordingly
 const PEER_MATCHER = process.env.PEER_MATCHER || '0.0.0.0:8081';
 const ICE_SERVER = process.env.ICE_SERVER || 'stun:0.0.0.0:3478';
+const NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS = 3;
+const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 3 * 1000;
+const MAX_WEBRTC_CONNECTION_DURATION = 3 * 60 * 1000;
+const CHANNEL_TIMEOUT_MULTIPLIER = 100;
 
 const SIGNAL_TYPES = {
   ROLE: 0,
   ICE_CANDIDATE: 1,
   SESSION_DESCRIPTION: 2,
-  CHANNEL_ESTABLISHED: 3, 
+  CHANNEL_ESTABLISHED: 3,
 }
 
-const NUMBER_OF_AVAILABLE_PROCCESSORS = 3;
+const NUMBER_OF_AVAILABLE_PROCESSORS = 3;
 
 const BUFFER_SIZE = 65535; // = 64kb = Max TCP packet size.
 
@@ -39,7 +40,9 @@ const REQUEST_TYPES = {
 };
 
 const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }) {
-  const channels = Array(NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCCESS);
+  const channels = Array(NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS);
+  const channelStateFlags = Array(NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS).fill(false);
+  const numbersOfFailingChannelsInARow = Array(NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS).fill(0);
   const socket = new net.Socket();
   const buffer = Buffer.alloc(BUFFER_SIZE);
   let extraBytesFlag = false;
@@ -70,30 +73,45 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
     socket.write(computorsRequest);
   }
 
-  const responseProcessor = function (response) {
+  const responseProcessor = function (response, iceServers) {
     numberOfInboundComputorRequests++;
-    for (let i = 0; i < NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCCESS; i++) {
+    for (let i = 0; i < NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS; i++) {
       if (channels[i]?.readyState === 'open') {
         numberOfOutboundWebRTCRequests++;
-        channels[i].send(response);
+        if (channels[i] !== undefined) {
+          channels[i].send(response);
+        }
       }
     }
   }
 
   const channel = function ({ iceServers }, i) {
+    if (channelStateFlags[i] === true) {
+      return;
+    }
+    channelStateFlags[i] = true;
+
     let pc
     const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
     const socket = new WebSocket(`wss://${PEER_MATCHER}`);
   
     socket.binaryType = 'arraybuffer';
-  
-    const connectionAttemptTimeout = setTimeout(function () {
-      socket.close();
-      if (pc !== undefined) {
-        pc.close();
+
+    const closeAndReconnect = function () {
+      if (channelStateFlags[i] === true) {
+        channelStateFlags[i] = false;
+        socket.close();
+        pc?.close();
+        pc = undefined;
+        channels[i]?.close();
+        channels[i] = undefined;
+        channel({ iceServers }, i);
       }
-      channel({ iceServers }, i);
-    }, MAX_WEBRTC_CONNECTION_ATTEMPT_DURATION);
+    }
+
+    const connectionAttemptTimeout = setTimeout(function () {
+      closeAndReconnect();
+    }, MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION + (++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER));
 
     socket.addEventListener('message', function (event) {
       const view = new DataView(event.data);
@@ -105,20 +123,19 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
           const open = function (dc) {
             dc.binaryType = 'arraybuffer';
             dc.onopen =  function () {
+              numbersOfFailingChannelsInARow[i] = 0;
+              clearTimeout(connectionAttemptTimeout);
               channels[i] = dc;
-              console.log(`Peer ${i} connected on ${process.pid}`);
+              console.log(`Peer ${i} connected on ${process.pid}.`);
               setTimeout(function () {
                 dc.close();
               }, MAX_WEBRTC_CONNECTION_DURATION);
-
-              clearTimeout(connectionAttemptTimeout);
             };
             dc.onclose = function () {
-              channels[i] = undefined;
               console.log(`Peer ${i} disconnected on ${process.pid}. Finding new peer...`);
               setTimeout(function () {
-                channel({ iceServers }, i);
-              }, 1);
+                closeAndReconnect();
+              }, (numbersOfFailingChannelsInARow[i] += (channels[i] === undefined) ? 0 : 1) * CHANNEL_TIMEOUT_MULTIPLIER);
             };
             dc.onmessage = function (event) {
               numberOfInboundWebRTCRequests++;
@@ -128,7 +145,10 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
           pc = new RTCPeerConnection({ iceServers });
   
           pc.oniceconnectionstatechange = function () {
-            if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed') {
+            if (pc !== undefined && (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed')) {
+              setTimeout(function () {
+                closeAndReconnect();
+              }, ++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
             }
           };
     
@@ -153,7 +173,8 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
   
           pc.onnegotiationneeded = function () {
             // Caller issues SDP offer
-            pc
+            if (pc !== undefined) {
+              pc
               .createOffer()
               .then(function (offer) { 
                 return pc.setLocalDescription(offer)
@@ -167,35 +188,39 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
                 socket.send(signal);
               })
               .catch(console.log);
-          };
-  
-          if (role === 1) {
-            if (pc.signalingState !== 'closed') { 
-              open(pc.createDataChannel('qbc'));
+
+              if (role === 1) {
+                if (pc?.signalingState !== 'closed') {
+                  open(pc.createDataChannel('qbc', {
+                    ordered: false,
+                    maxRetransmits: 0,
+                  }));
+                }
+              }
             }
-          }
+          };
           break;
         case SIGNAL_TYPES.ICE_CANDIDATE:
-          if (pc.signalingState !== 'closed') {
+          if (pc?.signalingState !== 'closed') {
             const candidate = JSON.parse(new TextDecoder().decode(event.data.slice(1)));
-            pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.log);
+            pc?.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.log);
           }
           break;
         case SIGNAL_TYPES.SESSION_DESCRIPTION:
           const sessionDescription = JSON.parse(new TextDecoder().decode(event.data.slice(1)));
           if (sessionDescription.type === 'offer') {
-            ;(pc.signalingState !== 'stable' && pc.signalingState !== 'closed'
+            ;(pc !== undefined && pc.signalingState !== 'stable' && pc.signalingState !== 'closed'
               ? Promise.all([
                 pc.setLocalDescription({ type: 'rollback' }),
                 pc.setRemoteDescription(new RTCSessionDescription(sessionDescription)),
               ])
-              : pc.signalingState !== 'closed' && (pc.setRemoteDescription(new RTCSessionDescription(sessionDescription)))
+              : pc !== undefined && pc.signalingState !== 'closed' && pc.setRemoteDescription(new RTCSessionDescription(sessionDescription))
                 .then(function () {
                   // Callee anwsers SDP offer
-                  return pc.createAnswer();
+                  return pc !== undefined && pc.createAnswer();
                 })
                 .then(function (answer) {
-                  return pc.setLocalDescription(answer);
+                  return pc !== undefined && answer && pc.setLocalDescription(answer);
                 })
                 .then(function () {
                   const payload = new TextEncoder().encode(JSON.stringify(pc.localDescription))
@@ -206,7 +231,7 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
                   socket.send(signal);
                 })
                 .catch(console.log));
-          } else if (sessionDescription.type === 'answer') {
+          } else if (pc !== undefined && sessionDescription.type === 'answer') {
             pc.setRemoteDescription(new RTCSessionDescription(sessionDescription)).catch(console.log);
           }
           break;
@@ -214,17 +239,15 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
     });
   
     socket.addEventListener('error', function (error) {
-      console.log(error.message);
+      //console.log(error.message);
     });
     
     socket.addEventListener('close', function () {
-      if (pc !== undefined) {
-        //pc.close();
-      }
+      closeAndReconnect();
     });
   };
 
-  for (let i = 0; i < NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCCESS; i++) {
+  for (let i = 0; i < NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS; i++) {
     channel({
       iceServers: [
         {
@@ -237,7 +260,7 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
   }
 
   socket.connect(QUBIC_PORT, computor, function() {
-    console.log(`Connection (${COMPUTOR}) on ${process.pid} oppened.`);
+    console.log(`Connection opened (${COMPUTOR}) on ${process.pid}.`);
     numberOfFailingComputorConnectionsInARow = 0;
     exchangePublicPeers();
     setInterval(function () {
@@ -277,22 +300,20 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
   });
 
   socket.on('close', function() {
-    console.log(`Connection (${COMPUTOR}) on ${process.pid} closed. Reopening...`);
+    console.log(`Connection closed (${COMPUTOR}) on ${process.pid}. Connecting...`);
     setTimeout(function () {
       numberOfFailingComputorConnectionsInARow++;
       gateway({ computor, numberOfFailingComputorConnectionsInARow });
-    }, numberOfFailingComputorConnectionsInARow * 100);
+    }, numberOfFailingComputorConnectionsInARow * COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER);
   });
 
   let numberOfInboundComputorRequests2 = 0;
   let numberOfOutboundComputorRequests2 = 0;
   let numberOfInboundWebRTCRequests2 = 0;
   let numberOfOutboundWebRTCRequests2 = 0;
-  let numberOfPeers = 0;
-  let numberOfPeers2 = 0;
 
   setInterval(function () {
-    numberOfPeers = channels.filter(function (channel) {
+    const numberOfPeers = channels.filter(function (channel) {
       return channel?.readyState === 'open';
     }).length;
     process.send(JSON.stringify([
@@ -300,9 +321,8 @@ const gateway = function ({ computor, numberOfFailingComputorConnectionsInARow }
       numberOfOutboundComputorRequests - numberOfOutboundComputorRequests2,
       numberOfInboundWebRTCRequests - numberOfInboundWebRTCRequests2,
       numberOfOutboundWebRTCRequests - numberOfOutboundWebRTCRequests2,
-      numberOfPeers - numberOfPeers2,
+      numberOfPeers,
     ]));
-    numberOfPeers2 = numberOfPeers;
     numberOfInboundComputorRequests2 = numberOfInboundComputorRequests;
     numberOfOutboundComputorRequests2 = numberOfOutboundComputorRequests;
     numberOfInboundWebRTCRequests2 = numberOfInboundWebRTCRequests;
@@ -332,11 +352,11 @@ if (cluster.isPrimary) {
       numberOfOutboundComputorRequests += deltas[1];
       numberOfInboundWebRTCRequests += deltas[2];
       numberOfOutboundWebRTCRequests += deltas[3];
-      numberOfPeersByPid.set(pid, numberOfPeersByPid.get(pid) + deltas[4]);
+      numberOfPeersByPid.set(pid, deltas[4]);
     }
   }
 
-  for (let i = 0; i < NUMBER_OF_AVAILABLE_PROCCESSORS; i++) {
+  for (let i = 0; i < NUMBER_OF_AVAILABLE_PROCESSORS; i++) {
     const child = cluster.fork();
     numberOfPeersByPid.set(child.pid, 0);
     child.on('message', onmessage(child.pid));
@@ -362,7 +382,7 @@ if (cluster.isPrimary) {
       '<-' + (numberOfOutboundComputorRequests - numberOfOutboundComputorRequests2) + ']',
       'W[->' + (numberOfInboundWebRTCRequests - numberOfInboundWebRTCRequests2),
       '<-' + (numberOfOutboundWebRTCRequests - numberOfOutboundWebRTCRequests2) + ']',
-      numberOfPeers + '/' + NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCCESS * NUMBER_OF_AVAILABLE_PROCCESSORS + ' peers'
+      numberOfPeers + '/' + NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS * NUMBER_OF_AVAILABLE_PROCESSORS + ' peers'
     );
 
     numberOfInboundComputorRequests2 = numberOfInboundComputorRequests;
