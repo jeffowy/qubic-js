@@ -175,7 +175,9 @@ const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInAR
       case SIGNAL_TYPES.ICE_CANDIDATE:
         if (pc?.signalingState !== 'closed') {
           const candidate = JSON.parse(new TextDecoder().decode(event.data.slice(1)));
-          pc?.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.log);
+          if (candidate?.candidate?.length > 0) {
+            pc?.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.log);
+          }
         }
         break;
       case SIGNAL_TYPES.SESSION_DESCRIPTION:
