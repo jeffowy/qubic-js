@@ -12,7 +12,7 @@ const COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER = 1000;
 const PEER_MATCHER = process.env.PEER_MATCHER || '0.0.0.0:8081';
 const ICE_SERVER = process.env.ICE_SERVER || 'stun:0.0.0.0:3478';
 const NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS = 3;
-const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 10 * 1000;
+const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 3 * 1000;
 const MAX_WEBRTC_CONNECTION_DURATION = 3 * 60 * 1000;
 const CHANNEL_TIMEOUT_MULTIPLIER = 100;
 
@@ -38,7 +38,6 @@ const REQUEST_TYPES = {
   EXCHANGE_PUBLIC_PEERS: 0,
   REQUEST_COMPUTORS: 11,
 };
-
 
 const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInARow, i, onmessage) {
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
