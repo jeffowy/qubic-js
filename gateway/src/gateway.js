@@ -399,7 +399,9 @@ if (cluster.isPrimary) {
     console.log(signal, code);
     console.log('Worker %d died (%s). Restarting...', worker.process.pid, signal || code);
     const child = cluster.fork();
-    child.send(JSON.stringify(numbersOfRequestsByPid.get(worker.process.pid)));
+    if (numbersOfRequestsByPid.has(worker.process.pid)) {
+      child.send(JSON.stringify(numbersOfRequestsByPid.get(worker.process.pid)));
+    }
     numbersOfRequestsByPid.delete(worker.process.pid);
     numberOfPeersByPid.delete(worker.process.pid);
     numberOfPeersByPid.set(child.pid, 0);
