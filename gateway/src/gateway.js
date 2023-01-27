@@ -95,14 +95,6 @@ const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInAR
             clearTimeout(connectionAttemptTimeout);
             numbersOfFailingChannelsInARow[i] = 0;
             channels[i] = dc;
-            channels[i].terminate = function () {
-              socket.close();
-              pc?.close();
-              pc = undefined;
-              if (channels[i]?.readyState === 'open') {
-                channels[i].close();
-              }
-            };
             console.log(`Peer ${i} connected on ${process.pid}.`);
             setTimeout(function () {
               dc?.close();
@@ -313,10 +305,6 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     console.log(`Connection closed (${COMPUTOR}) on ${process.pid}. Connecting...`);
     setTimeout(function () {
       numberOfFailingComputorConnectionsInARow++;
-
-      for (let i = 0; i < NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS; i++) {
-        channels[i]?.terminate();
-      }
 
       computorConnection({ channels, numberOfFailingComputorConnectionsInARow });
     }, numberOfFailingComputorConnectionsInARow * COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER);
