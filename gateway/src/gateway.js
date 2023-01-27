@@ -327,6 +327,14 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
   let numberOfInboundWebRTCRequests2 = 0;
   let numberOfOutboundWebRTCRequests2 = 0;
 
+  process.on('message', function (message) {
+    const data = JSON.parse(message);
+    numberOfOutboundComputorRequests = numberOfOutboundComputorRequests2 = data[0];
+    numberOfOutboundComputorRequests = numberOfOutboundComputorRequests2 = data[1];
+    numberOfInboundWebRTCRequests = numberOfInboundWebRTCRequests2 = data[2];
+    numberOfOutboundWebRTCRequests = numberOfOutboundWebRTCRequests2 = data[3];
+  });
+
   setInterval(function () {
     const numberOfPeers = channels.filter(function (channel) {
       return channel?.readyState === 'open';
@@ -369,6 +377,8 @@ const gateway = function () {
 if (cluster.isPrimary) {
   console.log(`Primary ${process.pid} is running.`);
 
+  const numbersOfRequestsByPid = new Map();
+  const numberOfPeersByPid = new Map();
   let numberOfInboundComputorRequests = 0;
   let numberOfOutboundComputorRequests = 0;
   let numberOfInboundWebRTCRequests = 0;
@@ -377,17 +387,17 @@ if (cluster.isPrimary) {
   let numberOfOutboundComputorRequests2 = 0;
   let numberOfInboundWebRTCRequests2 = 0;
   let numberOfOutboundWebRTCRequests2 = 0;
-  let numberOfPeersByPid = new Map();
 
 
   const onmessage = function (pid) {
     return function (message) {
-      const deltas = JSON.parse(message);
-      numberOfInboundComputorRequests += deltas[0];
-      numberOfOutboundComputorRequests += deltas[1];
-      numberOfInboundWebRTCRequests += deltas[2];
-      numberOfOutboundWebRTCRequests += deltas[3];
-      numberOfPeersByPid.set(pid, deltas[4]);
+      const data = JSON.parse(message);
+      numberOfInboundComputorRequests += data[0];
+      numberOfOutboundComputorRequests += data[1];
+      numberOfInboundWebRTCRequests += data[2];
+      numberOfOutboundWebRTCRequests += data[3];
+      numbersOfRequestsByPid.set(pid, data.slice(0, 4));
+      numberOfPeersByPid.set(pid, data[4]);
     }
   }
 
@@ -401,6 +411,8 @@ if (cluster.isPrimary) {
     console.log(signal, code);
     console.log('Worker %d died (%s). Restarting...', worker.process.pid, signal || code);
     const child = cluster.fork();
+    child.send(JSON.stringify(numbersOfRequestsByPid.get(worker.process.pid)));
+    numbersOfRequestsByPid.delete(worker.process.pid);
     numberOfPeersByPid.delete(worker.process.pid);
     numberOfPeersByPid.set(child.pid, 0);
     child.on('message', onmessage(child.pid));
