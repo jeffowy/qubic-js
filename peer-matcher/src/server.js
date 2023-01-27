@@ -47,29 +47,27 @@ export const server = function () {
           function () {
             if (!a.closed) {
               while (buffer.length > 0) {
-                const i = Math.floor(Math.random() * (buffer.length + 1));
+                const i = Math.floor(Math.random() * buffer.length);
                 let b = buffer[i];
-                if (b !== undefined) {
-                  if (b.closed === true) {
-                    b.reject();
-                    buffer.splice(i, 1);
-                  } else if (b.remoteAddress !== a.remoteAddress && matches.has([a.remoteAddress, b.remoteAddress].sort().join('-')) === false) {
-                    matches.add([a.remoteAddress, b.remoteAddress].sort().join('-'));
-                    buffer.splice(i, 1);
-                    // Assign roles
-                    a.role = 1; // Caller makes SDP offer
-                    b.role = 0; // Callee answers SDP offer
-                    a.peer = b;
-                    b.peer = a;
-                    resolve();
-                    b.resolve();
-                    return;
-                  } else {
-                    a.resolve = resolve;
-                    a.reject = reject;
-                    buffer.push(a);
-                    return;
-                  }
+                if (b.closed === true) {
+                  b.reject();
+                  buffer.splice(i, 1);
+                } else if (b.remoteAddress !== a.remoteAddress && matches.has([a.remoteAddress, b.remoteAddress].sort().join('-')) === false) {
+                  matches.add([a.remoteAddress, b.remoteAddress].sort().join('-'));
+                  buffer.splice(i, 1);
+                  // Assign roles
+                  a.role = 1; // Caller makes SDP offer
+                  b.role = 0; // Callee answers SDP offer
+                  a.peer = b;
+                  b.peer = a;
+                  resolve();
+                  b.resolve();
+                  return;
+                } else {
+                  a.resolve = resolve;
+                  a.reject = reject;
+                  buffer.push(a);
+                  return;
                 }
               }
               a.resolve = resolve;
