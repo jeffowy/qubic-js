@@ -276,12 +276,13 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     }
   }
 
+  let interval;
   const COMPUTOR = COMPUTORS[Math.floor(Math.random() * COMPUTORS.length)];
   socket.connect(QUBIC_PORT, COMPUTOR, function() {
     console.log(`Connection opened (${COMPUTOR}) on ${process.pid}.`);
     numberOfFailingComputorConnectionsInARow = 0;
     exchangePublicPeers();
-    setInterval(function () {
+    interval = setInterval(function () {
       numberOfOutboundComputorRequests++;
       requestComputors();
     }, 5000);
@@ -317,25 +318,7 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     }
   });
 
-  socket.on('close', function() {
-    console.log(`Connection closed (${COMPUTOR}) on ${process.pid}. Connecting...`);
-    setTimeout(function () {
-      numberOfFailingComputorConnectionsInARow++;
-      process.removeListener('message', onIPCMessage);
-      computorConnection({
-        channels,
-        numberOfFailingComputorConnectionsInARow,
-        numbersOfRequests: [
-          numberOfInboundComputorRequests,
-          numberOfOutboundComputorRequests,
-          numberOfInboundWebRTCRequests,
-          numberOfOutboundWebRTCRequests,
-        ]
-      });
-    }, numberOfFailingComputorConnectionsInARow * COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER);
-  });
-
-  setInterval(function () {
+  const clusterNotificationInterval = setInterval(function () {
     const numberOfPeers = channels.filter(function (channel) {
       return channel?.readyState === 'open';
     }).length;
@@ -351,6 +334,26 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     numberOfInboundWebRTCRequests2 = numberOfInboundWebRTCRequests;
     numberOfOutboundWebRTCRequests2 = numberOfOutboundWebRTCRequests;
   }, 1000);
+
+  socket.on('close', function() {
+    console.log(`Connection closed (${COMPUTOR}) on ${process.pid}. Connecting...`);
+    setTimeout(function () {
+      numberOfFailingComputorConnectionsInARow++;
+      clearInterval(interval);
+      clearInterval(clusterNotificationInterval);
+      process.removeListener('message', onIPCMessage);
+      computorConnection({
+        channels,
+        numberOfFailingComputorConnectionsInARow,
+        numbersOfRequests: [
+          numberOfInboundComputorRequests,
+          numberOfOutboundComputorRequests,
+          numberOfInboundWebRTCRequests,
+          numberOfOutboundWebRTCRequests,
+        ]
+      });
+    }, numberOfFailingComputorConnectionsInARow * COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER);
+  });
 
   return requestProcessor;
 };
