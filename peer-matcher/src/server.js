@@ -47,6 +47,9 @@ export const server = function () {
           function () {
             if (!a.closed) {
               for (let i = 0; i < buffer.length; i++) {
+                if (buffer[i] === undefined) {
+                  break;
+                }
                 let b = buffer[i];
                 if (b.closed === true) {
                   b.reject();
