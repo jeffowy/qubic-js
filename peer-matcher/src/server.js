@@ -46,8 +46,7 @@ export const server = function () {
         a.deschedule = queue.schedule(
           function () {
             if (!a.closed) {
-              while (buffer.length > 0) {
-                const i = Math.floor(Math.random() * buffer.length);
+              for (let i = 0; i < buffer.length; i++) {
                 let b = buffer[i];
                 if (b.closed === true) {
                   b.reject();
