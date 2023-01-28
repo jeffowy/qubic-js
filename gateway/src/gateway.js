@@ -42,6 +42,8 @@ const REQUEST_TYPES = {
   REQUEST_COMPUTORS: 11,
 };
 
+const NUMBER_OF_EXCHANGED_PEERS = 4;
+
 const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInARow, i, onmessage) {
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
   const socket = new WebSocket(`wss://${PEER_MATCHER}`);
@@ -266,6 +268,18 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
 
   const responseProcessor = function (response) {
     numberOfInboundComputorRequests++;
+
+    if (response[`readUint${TYPE_LENGTH * 8}LE`](TYPE_OFFSET) === REQUEST_TYPES.EXCHANGE_PUBLIC_PEERS) {
+      let offset = 0;
+      for (let i = 0; i < NUMBER_OF_EXCHANGED_PEERS; i++) {
+        const computor = Array.from(response.subarray(i * 4, (i + 1) * 4)).join('.');
+        if (COMPUTORS.indexOf(computor) === -1) {
+          COMPUTORS.push(computor);
+        }
+      }
+      return;
+    }
+
     for (let i = 0; i < NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS; i++) {
       if (channels[i]?.readyState === 'open') {
         numberOfOutboundWebRTCRequests++;
