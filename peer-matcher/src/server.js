@@ -63,11 +63,6 @@ export const server = function () {
                   resolve();
                   b.resolve();
                   return;
-                } else {
-                  a.resolve = resolve;
-                  a.reject = reject;
-                  buffer.push(a);
-                  return;
                 }
               }
               a.resolve = resolve;
