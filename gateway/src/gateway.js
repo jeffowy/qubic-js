@@ -36,6 +36,9 @@ const TYPE_LENGTH = 2;
 const HEADER_LENGTH = TYPE_OFFSET + TYPE_LENGTH;
 const REQUEST_TYPES = {
   EXCHANGE_PUBLIC_PEERS: 0,
+  BROADCAST_COMPUTORS: 2,
+  BROADCAST_TICK: 3,
+  BROADCAST_REVENUES: 4,
   REQUEST_COMPUTORS: 11,
 };
 
@@ -213,16 +216,29 @@ const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInAR
   });
 };
 
-const computorConnection = function ({ channels, numberOfFailingComputorConnectionsInARow }) {
+const computorConnection = function ({ channels, numberOfFailingComputorConnectionsInARow, numbersOfRequests }) {
   const socket = new net.Socket();
   const buffer = Buffer.alloc(BUFFER_SIZE);
   let extraBytesFlag = false;
   let byteOffset = 0;
 
-  let numberOfInboundComputorRequests = 0;
-  let numberOfOutboundComputorRequests = 0;
-  let numberOfInboundWebRTCRequests = 0;
-  let numberOfOutboundWebRTCRequests = 0;
+  let numberOfInboundComputorRequests = numbersOfRequests?.[0] || 0;
+  let numberOfOutboundComputorRequests = numbersOfRequests?.[1] || 0;
+  let numberOfInboundWebRTCRequests = numbersOfRequests?.[2] || 0;
+  let numberOfOutboundWebRTCRequests = numbersOfRequests?.[3] || 0;
+  let numberOfInboundComputorRequests2 = numbersOfRequests?.[0] || 0;
+  let numberOfOutboundComputorRequests2 = numbersOfRequests?.[1] || 0;
+  let numberOfInboundWebRTCRequests2 = numbersOfRequests?.[2] || 0;
+  let numberOfOutboundWebRTCRequests2 = numbersOfRequests?.[3] || 0;
+
+  const onIPCMessage = function (message) {
+    const data = JSON.parse(message);
+    numberOfOutboundComputorRequests = numberOfOutboundComputorRequests2 = data[0];
+    numberOfOutboundComputorRequests = numberOfOutboundComputorRequests2 = data[1];
+    numberOfInboundWebRTCRequests = numberOfInboundWebRTCRequests2 = data[2];
+    numberOfOutboundWebRTCRequests = numberOfOutboundWebRTCRequests2 = data[3];
+  }
+  process.on('message', onIPCMessage);
 
   if (numberOfFailingComputorConnectionsInARow === undefined) {
     numberOfFailingComputorConnectionsInARow = 0;
@@ -267,7 +283,7 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     exchangePublicPeers();
     setInterval(function () {
       numberOfOutboundComputorRequests++;
-      requestComputors()
+      requestComputors();
     }, 5000);
   });
   
@@ -305,26 +321,18 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     console.log(`Connection closed (${COMPUTOR}) on ${process.pid}. Connecting...`);
     setTimeout(function () {
       numberOfFailingComputorConnectionsInARow++;
-
-      computorConnection({ channels, numberOfFailingComputorConnectionsInARow });
+      process.removeListener('message', onIPCMessage);
+      computorConnection({
+        channels,
+        numberOfFailingComputorConnectionsInARow,
+        numbersOfRequests: [
+          numberOfInboundComputorRequests,
+          numberOfOutboundComputorRequests,
+          numberOfInboundWebRTCRequests,
+          numberOfOutboundWebRTCRequests,
+        ]
+      });
     }, numberOfFailingComputorConnectionsInARow * COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER);
-  });
-
-  let numberOfInboundComputorRequests2 = 0;
-  let numberOfOutboundComputorRequests2 = 0;
-  let numberOfInboundWebRTCRequests2 = 0;
-  let numberOfOutboundWebRTCRequests2 = 0;
-
-  process.on('message', function (message) {
-    const data = JSON.parse(message);
-    numberOfOutboundComputorRequests = numberOfOutboundComputorRequests2 = data[0];
-    numberOfOutboundComputorRequests = numberOfOutboundComputorRequests2 = data[1];
-    numberOfInboundWebRTCRequests = numberOfInboundWebRTCRequests2 = data[2];
-    numberOfOutboundWebRTCRequests = numberOfOutboundWebRTCRequests2 = data[3];
-  });
-
-  process.on('exit', function () {
-    process.removeAllListeners();
   });
 
   setInterval(function () {
