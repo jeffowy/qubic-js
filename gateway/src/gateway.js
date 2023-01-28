@@ -323,6 +323,10 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     numberOfOutboundWebRTCRequests = numberOfOutboundWebRTCRequests2 = data[3];
   });
 
+  process.on('exit', function () {
+    process.removeAllListeners();
+  });
+
   setInterval(function () {
     const numberOfPeers = channels.filter(function (channel) {
       return channel?.readyState === 'open';
@@ -392,12 +396,12 @@ if (cluster.isPrimary) {
   for (let i = 0; i < NUMBER_OF_AVAILABLE_PROCESSORS; i++) {
     const child = cluster.fork();
     numberOfPeersByPid.set(child.pid, 0);
-    child.on('message', onmessage(child.pid));
+    child.addEventListener('message', onmessage(child.pid));
   }
 
   cluster.on('exit', (worker, code, signal) => {
-    console.log(signal, code);
     console.log('Worker %d died (%s). Restarting...', worker.process.pid, signal || code);
+    worker.process.removeAllListeners();
     const child = cluster.fork();
     if (numbersOfRequestsByPid.has(worker.process.pid)) {
       child.send(JSON.stringify(numbersOfRequestsByPid.get(worker.process.pid)));
