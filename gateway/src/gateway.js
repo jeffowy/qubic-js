@@ -396,7 +396,7 @@ if (cluster.isPrimary) {
   for (let i = 0; i < NUMBER_OF_AVAILABLE_PROCESSORS; i++) {
     const child = cluster.fork();
     numberOfPeersByPid.set(child.pid, 0);
-    child.addEventListener('message', onmessage(child.pid));
+    child.on('message', onmessage(child.pid));
   }
 
   cluster.on('exit', (worker, code, signal) => {
