@@ -11,9 +11,9 @@ const COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER = 1000;
 
 const PEER_MATCHER = process.env.PEER_MATCHER || '0.0.0.0:8081';
 const ICE_SERVER = process.env.ICE_SERVER || 'stun:0.0.0.0:3478';
-const NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS = process.env.WEBRTC_CONNECTIONS_PER_PROCESS || 3;
-const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 3 * 1000;
-const MAX_WEBRTC_CONNECTION_DURATION = 3 * 60 * 1000;
+const NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS = process.env.WEBRTC_CONNECTIONS_PER_PROCESS || 4;
+const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 6 * 1000;
+const MAX_ROTATING_WEBRTC_CONNECTION_DURATION = 1 * 60 * 1000;
 const CHANNEL_TIMEOUT_MULTIPLIER = 100;
 
 const SIGNAL_TYPES = {
@@ -101,9 +101,11 @@ const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInAR
             numbersOfFailingChannelsInARow[i] = 0;
             channels[i] = dc;
             console.log(`Peer ${i} connected on ${process.pid}.`);
-            setTimeout(function () {
-              dc?.close();
-            }, MAX_WEBRTC_CONNECTION_DURATION);
+            if (i === NUMBER_OF_WEBRTC_CONNECTIONS_PER_PROCESS - 1) {
+              setTimeout(function () {
+                dc?.close();
+              }, MAX_ROTATING_WEBRTC_CONNECTION_DURATION);
+            }
           };
           dc.onclose = function () {
             console.log(`Peer ${i} disconnected on ${process.pid}. Finding new peer...`);
