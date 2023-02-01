@@ -25,8 +25,6 @@ const SIGNAL_TYPES = {
 
 const NUMBER_OF_AVAILABLE_PROCESSORS = process.env.NUMBER_OF_AVAILABLE_PROCESSORS || 3;
 
-const BUFFER_SIZE = 65535; // = 64kb = Max TCP packet size.
-
 const SIZE_OFFSET = 0;
 const SIZE_LENGTH = 4;
 const PROTOCOL_VERSION_OFFSET = SIZE_OFFSET + SIZE_LENGTH;
@@ -154,7 +152,7 @@ const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInAR
               return pc.setLocalDescription(offer)
             })
             .then(function () {
-              const payload = new TextEncoder().encode(JSON.stringify(pc.localDescription))
+              const payload = new TextEncoder().encode(JSON.stringify(pc.localDescription));
               const signal = new Uint8Array(1 + payload.length);
               const signalView = new DataView(signal.buffer);
               signal.set(payload, 1);
@@ -222,7 +220,7 @@ const channel = function ({ iceServers }, channels, numbersOfFailingChannelsInAR
 
 const computorConnection = function ({ channels, numberOfFailingComputorConnectionsInARow, numbersOfRequests }) {
   const socket = new net.Socket();
-  const buffer = Buffer.alloc(BUFFER_SIZE);
+  let buffer;
   let extraBytesFlag = false;
   let byteOffset = 0;
 
@@ -272,7 +270,6 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     numberOfInboundComputorRequests++;
 
     if (response[`readUint${TYPE_LENGTH * 8}LE`](TYPE_OFFSET) === REQUEST_TYPES.EXCHANGE_PUBLIC_PEERS) {
-      let offset = 0;
       for (let i = 0; i < NUMBER_OF_EXCHANGED_PEERS; i++) {
         const computor = Array.from(response.subarray(i * 4, (i + 1) * 4)).join('.');
         if (COMPUTORS.indexOf(computor) === -1) {
@@ -311,6 +308,7 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
     while (byteOffset2 < data.length) {
       if (extraBytesFlag === false) {
         if (data[`readUint${SIZE_LENGTH * 8}LE`](byteOffset2 + SIZE_OFFSET) - (data.length - byteOffset2) > 0) {
+          buffer = Buffer.alloc(data[`readUint${SIZE_LENGTH * 8}LE`](byteOffset2 + SIZE_OFFSET));
           data.copy(buffer, byteOffset, byteOffset2);
           byteOffset += data.length - byteOffset2;
           byteOffset2 = data.length;
@@ -328,7 +326,7 @@ const computorConnection = function ({ channels, numberOfFailingComputorConnecti
         if (byteOffset === buffer[`readUint${SIZE_LENGTH * 8}LE`](SIZE_OFFSET)) {
           extraBytesFlag = false;
           byteOffset = 0;
-          responseProcessor(buffer.subarray(0, buffer[`readUint${SIZE_LENGTH * 8}LE`](SIZE_OFFSET)));
+          responseProcessor(buffer.slice(0, buffer[`readUint${SIZE_LENGTH * 8}LE`](SIZE_OFFSET)));
         }
       }
     }
