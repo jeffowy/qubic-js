@@ -5,7 +5,7 @@ import WebSocket from "ws";
 import wrtc from 'wrtc';
 
 const QUBIC_PORT = process.env.QUBIC_PORT || 21841;
-const QUBIC_PROTOCOL = process.env.QUBIC_PROTOCOL || 84;
+const QUBIC_PROTOCOL = process.env.QUBIC_PROTOCOL || 85;
 const COMPUTORS = (process.env.COMPUTORS || '0.0.0.0').split(',').map(s => s.trim());
 const COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER = 1000;
 
