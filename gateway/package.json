@@ -1,6 +1,6 @@
 {
   "name": "qubic-gateway",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "description": "",
   "main": "./src/gateway.js",
   "type": "module",
@@ -8,7 +8,7 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "Chris Dukakis<chrisdukakis@gmail.com>",
   "dependencies": {
     "wrtc": "^0.4.7",
     "ws": "^8.12.0"
