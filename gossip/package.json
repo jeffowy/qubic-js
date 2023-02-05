@@ -1,11 +1,18 @@
 {
-  "name": "dissemination",
-  "version": "1.0.0",
+  "name": "qubic-gossip",
+  "version": "0.0.0",
   "description": "",
-  "main": "./src/dessemination.js",
+  "main": "./src/gossip.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": ""
+  "author": "Chris Dukakis<chrisdukakis@gmail.com>",
+  "dependencies": {
+    "isomorphic-ws": "^5.0.0",
+    "qubic-converter": "workspace:*",
+    "qubic-crypto": "workspace:*",
+    "wrtc": "^0.4.7"
+  }
 }

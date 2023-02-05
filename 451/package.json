@@ -1,11 +1,17 @@
 {
   "name": "451",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "version": "0.0.0",
+  "description": "451 is threshold needed for computors to reach consensus.",
+  "main": "./src/451.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": ""
+  "keywords": ["451", "qubic"],
+  "author": "Chris Dukakis<chrisdukakis@gmail.com>",
+  "dependencies": {
+    "qubic-converter": "workspace:*",
+    "qubic-crypto": "workspace:*",
+    "qubic-gossip": "workspace:*"
+  }
 }

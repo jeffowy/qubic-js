@@ -1,0 +1,340 @@
+<!doctype html>
+<html>
+  <head>
+    <script>
+import WebSocket from 'ws';
+import wrtc from 'wrtc';
+import crypto from 'qubic-crypto';
+import { publicKeyStringToBytes } from 'qubic-converter';
+
+const NUMBER_OF_CONNECTIONS = 3;
+// change accordingly
+const PEER_MATCHER = 'monkfish-app-g7zdb.ondigitalocean.app/:8081';
+const ICE_SERVER = 'stun:stun.l.google.com:19302';
+
+const SIGNAL_TYPES = {
+  ROLE: 0,
+  ICE_CANDIDATE: 1,
+  SESSION_DESCRIPTION: 2,
+  CHANNEL_ESTABLISHED: 3, 
+}
+
+const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 3 * 1000;
+const MAX_WEBRTC_CONNECTION_DURATION = 3 * 60 * 1000;
+const MAX_PERIOD_OF_WEBRTC_CONNECTION_INACTIVITY = 10 * 1000;
+const CHANNEL_TIMEOUT_MULTIPLIER = 100;
+
+const ADMIN_PUBLIC_KEY = 'EWVQXREUTMLMDHXINHYJKSLTNIFBMZQPYNIFGFXGJBODGJHCFSSOKJZCOBOH';
+const ADMIN_PUBLIC_KEY_BYTES = publicKeyStringToBytes(ADMIN_PUBLIC_KEY);
+
+const RELIABILITY_THRESHOLD = 2 / 3;
+
+const SIZE_OFFSET = 0;
+const SIZE_LENGTH = 4;
+const PROTOCOL_VERSION_OFFSET = SIZE_OFFSET + SIZE_LENGTH;
+const PROTOCOL_VERSION_LENGTH = 2;
+const TYPE_OFFSET = PROTOCOL_VERSION_OFFSET + PROTOCOL_VERSION_LENGTH;
+const TYPE_LENGTH = 2;
+const HEADER_LENGTH = TYPE_OFFSET + TYPE_LENGTH;
+const MESSAGE_TYPES = {
+  EXCHANGE_PUBLIC_PEERS: 0,
+  BROADCAST_COMPUTORS: 2,
+  BROADCAST_TICK: 3,
+  BROADCAST_REVENUES: 4,
+  REQUEST_COMPUTORS: 11,
+};
+
+const NUMBER_OF_COMPUTORS = 676;
+const PUBLIC_KEY_LENGTH = 32;
+const DIGEST_LENGTH = 32;
+
+const BROADCAST_COMPUTORS_EPOCH_OFFSET = HEADER_LENGTH;
+const BROADCAST_COMPUTORS_EPOCH_LENGTH = 2;
+const BROADCAST_COMPUTORS_PUBLIC_KEYS_OFFSET = BROADCAST_COMPUTORS_EPOCH_OFFSET + BROADCAST_COMPUTORS_EPOCH_LENGTH;
+const BROADCAST_COMPUTORS_PUBLIC_KEYS_LENGTH = 32 * NUMBER_OF_COMPUTORS;
+const BROADCAST_COMPUTORS_SIGNATURE_OFFSET = BROADCAST_COMPUTORS_PUBLIC_KEYS_OFFSET + BROADCAST_COMPUTORS_PUBLIC_KEYS_LENGTH;
+const BROADCAST_COMPUTORS_SIGNATURE_LENGTH = 64;
+
+
+const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
+
+const channels = Array(NUMBER_OF_CONNECTIONS);
+const epochs = Array(NUMBER_OF_CONNECTIONS).fill(0);
+const numbersOfFailingChannelsInARow = Array(NUMBER_OF_CONNECTIONS).fill(0);
+
+const system = {
+  epoch: 0,
+  peersAlignmentOnComputors: 0,
+  tick: 0,
+  tickCounters: Array(NUMBER_OF_COMPUTORS).fill(0),
+  computorPublicKeys: new Uint8Array(NUMBER_OF_COMPUTORS * PUBLIC_KEY_LENGTH),
+};
+const store = {
+  computors: undefined,
+};
+
+const channel = function ({ iceServers }, i) {
+  const socket = new WebSocket(`wss://${PEER_MATCHER}`);
+  let pc
+  let state = 0;
+  let closeAndReconnectTimeout;
+  let inactiveChannelTimeout;
+
+  socket.binaryType = 'arraybuffer';
+
+  let connectionAttemptTimeout = setTimeout(function () {
+    if (state++ > 0) {
+      return;
+    }
+    clearTimeout(closeAndReconnectTimeout);
+    socket.close();
+    pc?.close();
+    pc = undefined;
+    if (channels[i]?.readyState === 'open') {
+      channels[i].close();
+    }
+    channel({ iceServers }, i);
+  }, MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION + (++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER));
+
+  const closeAndReconnect = function (timeoutDuration) {
+    if (state++ > 0) {
+      return;
+    }
+    closeAndReconnectTimeout = setTimeout(function () {
+      clearTimeout(connectionAttemptTimeout);
+      socket.close();
+      pc?.close();
+      pc = undefined;
+      if (channels[i]?.readyState === 'open') {
+        channels[i].close();
+      }
+      channel({ iceServers }, i);
+    }, timeoutDuration);
+  }
+
+
+  socket.addEventListener('message', function (event) {
+    const view = new DataView(event.data);
+
+    switch (view.getUint8(0, true)) {
+      case SIGNAL_TYPES.ROLE:
+        const role = view.getUint8(1, true);
+  
+        const broadcast = function (data) {
+          for (let j = 0; j < NUMBER_OF_CONNECTIONS; j++) {
+            if (i !== j) {
+              if (channels[j]?.readyState === 'open') {
+                channels[j].send(data);
+              }
+            }
+          }
+        }
+
+        const open = function (dc) {
+          dc.binaryType = 'arraybuffer';
+          dc.onopen =  function () {
+            clearTimeout(closeAndReconnectTimeout);
+            clearTimeout(connectionAttemptTimeout);
+            numbersOfFailingChannelsInARow[i] = 0;
+            channels[i] = dc;
+            console.log(`Peer ${i} connected.`);
+            inactiveChannelTimeout = setTimeout(function () {
+              dc?.close();
+            }, MAX_PERIOD_OF_WEBRTC_CONNECTION_INACTIVITY);
+            setTimeout(function () {
+              if (Math.random() > 1 / 3) {
+                return;
+              }
+              dc?.close();
+            }, MAX_WEBRTC_CONNECTION_DURATION);
+
+            if (system.peersAlignmentOnComputors >= RELIABILITY_THRESHOLD && dc?.readyState === 'open') {
+              dc.send(store.computors);
+            }
+          };
+          dc.onclose = function () {
+            console.log(`Peer ${i} disconnected. Finding new peer...`);
+            channels[i] = undefined;
+            dc = undefined;
+            closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
+          };
+
+          dc.onmessage = async function (event) {
+            clearTimeout(inactiveChannelTimeout);
+            inactiveChannelTimeout = setTimeout(function () {
+              dc?.close();
+            }, MAX_PERIOD_OF_WEBRTC_CONNECTION_INACTIVITY);
+
+            const dataView = new DataView(event.data);
+
+            // console.log('Received message:', event.data);
+            // console.log('Message type:', dataView[`getUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, true));
+            
+            switch (dataView[`getUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, true)) {
+
+              case MESSAGE_TYPES.BROADCAST_COMPUTORS:
+                let epoch = dataView[`getUint${BROADCAST_COMPUTORS_EPOCH_LENGTH * 8}`](BROADCAST_COMPUTORS_EPOCH_OFFSET, true);
+                if (epoch > epochs[i]) {
+                  epochs[i] = epoch;
+                }
+      
+                let numberOfAlignedValuesByEpoch = {};
+                for (let j = 0; j < NUMBER_OF_CONNECTIONS; j++) {
+                  if (channels[j] == undefined) {
+                    epochs[j] = 0;
+                  }
+                  if (numberOfAlignedValuesByEpoch[epochs[j]] === undefined) {
+                    numberOfAlignedValuesByEpoch[epochs[j]] = 1;
+                  } else {
+                    numberOfAlignedValuesByEpoch[epochs[j]]++;
+                  }
+                }
+
+                let numberOfAlignedValues = 0;
+                let epochCandidate = 0;
+                for (const k of Object.keys(numberOfAlignedValuesByEpoch)) {
+                  if (numberOfAlignedValuesByEpoch[k] > numberOfAlignedValues) {
+                    epochCandidate = k;
+                    numberOfAlignedValues = numberOfAlignedValuesByEpoch[k];
+                  }
+                }
+
+                if (epochCandidate > system.epoch) {
+                  const peersAlignmentOnComputors = numberOfAlignedValues / NUMBER_OF_CONNECTIONS;
+                  if (peersAlignmentOnComputors >= RELIABILITY_THRESHOLD) {
+                    const data = new Uint8Array(event.data);
+                    const digest = new Uint8Array(DIGEST_LENGTH);
+                    (await crypto).K12(data.slice(BROADCAST_COMPUTORS_EPOCH_OFFSET, BROADCAST_COMPUTORS_SIGNATURE_OFFSET), digest, DIGEST_LENGTH);
+
+                    if ((await crypto).schnorrq.verify(ADMIN_PUBLIC_KEY_BYTES, digest, data.slice(BROADCAST_COMPUTORS_SIGNATURE_OFFSET, BROADCAST_COMPUTORS_SIGNATURE_OFFSET + BROADCAST_COMPUTORS_SIGNATURE_LENGTH)) === 1) {
+                      system.epoch = epochCandidate;
+                      system.peersAlignmentOnComputors = peersAlignmentOnComputors;
+                      system.computorPublicKeys.set(data.slice(BROADCAST_COMPUTORS_PUBLIC_KEYS_OFFSET, BROADCAST_COMPUTORS_PUBLIC_KEYS_OFFSET + BROADCAST_COMPUTORS_PUBLIC_KEYS_LENGTH));
+                      store.computors = event.data;
+                      broadcast(event.data);
+                      console.log('Epoch:', epoch, system.peersAlignmentOnComputors.toFixed(2));
+                    }
+                  }
+                }
+                break;
+              case MESSAGE_TYPES.BROADCAST_TICK:
+                console.log('TICK')
+                break;
+            }
+          };
+        }
+
+        pc = new RTCPeerConnection({ iceServers });
+
+        pc.oniceconnectionstatechange = function () {
+          if (pc !== undefined && (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'closed')) {
+            //closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
+          }
+        };
+  
+        pc.ondatachannel = function ({ channel }) {
+          const signal = new Uint8Array(1);
+          const signalView = new DataView(signal.buffer);
+          signalView.setUint8(0, SIGNAL_TYPES.CHANNEL_ESTABLISHED, true);
+          socket.send(signal);
+          open(channel);
+        };
+
+        pc.onicecandidate = function ({ candidate }) {
+          if (candidate) {
+            const payload = new TextEncoder().encode(JSON.stringify(candidate));
+            const signal = new Uint8Array(1 + payload.length);
+            const signalView = new DataView(signal.buffer);
+            signal.set(payload, 1);
+            signalView.setUint8(0, SIGNAL_TYPES.ICE_CANDIDATE, true);
+            socket.send(signal.buffer);
+          }
+        };
+
+        pc.onnegotiationneeded = function () {
+          // Caller issues SDP offer
+          pc
+            .createOffer()
+            .then(function (offer) { 
+              return pc?.setLocalDescription(offer)
+            })
+            .then(function () {
+              const payload = new TextEncoder().encode(JSON.stringify(pc.localDescription))
+              const signal = new Uint8Array(1 + payload.length);
+              const signalView = new DataView(signal.buffer);
+              signal.set(payload, 1);
+              signalView.setUint8(0, SIGNAL_TYPES.SESSION_DESCRIPTION, true);
+              socket.send(signal);
+            })
+            .catch(console.log);
+        };
+
+        if (role === 1) {
+          open(pc.createDataChannel('qbc'));
+        }
+        break;
+      case SIGNAL_TYPES.ICE_CANDIDATE:
+        const candidate = JSON.parse(new TextDecoder().decode(event.data.slice(1)));
+        if (candidate?.candidate?.length > 0) {
+          pc?.addIceCandidate(new RTCIceCandidate(candidate)).catch(console.log);
+        }
+        break;
+      case SIGNAL_TYPES.SESSION_DESCRIPTION:
+        const sessionDescription = JSON.parse(new TextDecoder().decode(event.data.slice(1)));
+        if (sessionDescription.type === 'offer') {
+          ;(pc !== undefined ? (pc.signalingState !== 'stable'
+            ? Promise.all([
+              pc?.setLocalDescription({ type: 'rollback' }),
+              pc?.setRemoteDescription(new RTCSessionDescription(sessionDescription)),
+            ])
+            : pc?.setRemoteDescription(new RTCSessionDescription(sessionDescription))) : Promise.resolve())
+              .then(function () {
+                // Callee anwsers SDP offer
+                return pc?.createAnswer()
+              })
+              .then(function (answer) {
+                return pc?.setLocalDescription(answer);
+              })
+              .then(function () {
+                const payload = new TextEncoder().encode(JSON.stringify(pc.localDescription))
+                const signal = new Uint8Array(1 + payload.length);
+                const signalView = new DataView(signal.buffer);
+                signal.set(payload, 1);
+                signalView.setUint8(0, SIGNAL_TYPES.SESSION_DESCRIPTION, true);
+                socket.send(signal);
+              })
+              .catch(console.log);
+        } else if (sessionDescription.type === 'answer') {
+          pc?.setRemoteDescription(new RTCSessionDescription(sessionDescription)).catch(console.log);
+        }
+        break;
+    }
+  });
+
+  socket.addEventListener('error', function (error) {
+    console.log(error.message);
+  });
+  
+  socket.addEventListener('close', function () {
+    if (channels[i]?.readyState !== 'open') {
+      //closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
+    }
+  });
+};
+
+for (let i = 0; i < NUMBER_OF_CONNECTIONS; i++) {
+  channel({
+    iceServers: [
+      {
+        urls: [
+          ICE_SERVER,
+        ],
+      },
+    ],
+  }, i);
+}
+    </script>
+  </head>
+  <body>
+  </body>
+</html>

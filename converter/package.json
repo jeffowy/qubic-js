@@ -1,0 +1,12 @@
+{
+  "name": "qubic-converter",
+  "version": "0.0.0",
+  "description": "",
+  "main": "./src/converter.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Chris Dukakis<chrisdukakis@gmail.com>"
+}

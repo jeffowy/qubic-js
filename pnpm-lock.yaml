@@ -3,6 +3,19 @@ lockfileVersion: 5.4
 importers:
 
   '451':
+    specifiers:
+      qubic-converter: workspace:*
+      qubic-crypto: workspace:*
+      qubic-gossip: workspace:*
+    dependencies:
+      qubic-converter: link:../converter
+      qubic-crypto: link:../crypto
+      qubic-gossip: link:../gossip
+
+  converter:
+    specifiers: {}
+
+  crypto:
     specifiers: {}
 
   gateway:
@@ -14,14 +27,21 @@ importers:
       ws: 8.12.0
 
   gossip:
-    specifiers: {}
+    specifiers:
+      isomorphic-ws: ^5.0.0
+      qubic-converter: workspace:*
+      qubic-crypto: workspace:*
+      wrtc: ^0.4.7
+    dependencies:
+      isomorphic-ws: 5.0.0
+      qubic-converter: link:../converter
+      qubic-crypto: link:../crypto
+      wrtc: 0.4.7
 
   peer-matcher:
     specifiers:
-      wrtc: ^0.4.7
       ws: ^8.12.0
     dependencies:
-      wrtc: 0.4.7
       ws: 8.12.0
 
 packages:
@@ -187,6 +207,12 @@ packages:
 
   /isarray/1.0.0:
     resolution: {integrity: sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==}
+    dev: false
+
+  /isomorphic-ws/5.0.0:
+    resolution: {integrity: sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==}
+    peerDependencies:
+      ws: '*'
     dev: false
 
   /minimatch/3.1.2:
@@ -456,6 +482,8 @@ packages:
       node-pre-gyp: 0.13.0
     optionalDependencies:
       domexception: 1.0.1
+    transitivePeerDependencies:
+      - supports-color
     dev: false
     bundledDependencies:
       - node-pre-gyp
