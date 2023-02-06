@@ -13,6 +13,7 @@
     "isomorphic-ws": "^5.0.0",
     "qubic-converter": "workspace:*",
     "qubic-crypto": "workspace:*",
-    "wrtc": "^0.4.7"
+    "wrtc": "^0.4.7",
+    "ws": "^8.12.0"
   }
 }

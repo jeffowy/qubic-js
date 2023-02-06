@@ -200,87 +200,6 @@ const crypto = new Promise(function (resolve) {
       keccakP160012,
       KECCAK_STATE_LENGTH: 200,
     });
-
-    // const skA = [
-    //   125, 62, 16, 133, 107, 33, 255, 186, 215, 151, 156, 9, 225, 118, 213, 175, 41, 138, 90, 128,
-    //   198, 57, 176, 54, 161, 212, 50, 133, 236, 230, 186, 254,
-    // ];
-    // const pkA = generatePublicKey(skA);
-    // console.log(pkA);
-
-    // const skB = [
-    //   125, 62, 16, 143, 107, 33, 255, 186, 215, 151, 156, 9, 225, 118, 213, 175, 41, 138, 90, 128,
-    //   198, 57, 176, 54, 161, 212, 50, 133, 236, 230, 186, 0,
-    // ];
-    // const pkB = generatePublicKey(skB);
-
-    // const hSkB = new Uint8Array(64);
-    // K12(skB, hSkB, 64);
-    // const shk = compressedSecretAgreement(skB, pkA);
-    // console.log(shk);
-
-    // const hSkA = new Uint8Array(64);
-    // K12(skA, hSkA, 64);
-    // const shk2 = compressedSecretAgreement(skA, pkB);
-    // console.log(shk2);
-
-    // const v = [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36];
-    // const aesCtr = new aesjs.ModeOfOperation.cbc(Buffer.from(shk), v);
-    // const enc = aesCtr.encrypt(skB);
-    // console.log(skB);
-    // console.log(enc.toString());
-    // const aesCtr2 = new aesjs.ModeOfOperation.cbc(Buffer.from(shk), v);
-    // const dec = aesCtr2.decrypt(enc);
-    // console.log(dec);
-
-    // const message = new Uint8Array(1).fill(0).map(function (_, i) {
-    //   return i;
-    // });
-    // const h = new Uint8Array(32);
-    // k12(message, h, h.length);
-    // console.log(Array.from(h));
-
-    // const vector = {
-    //   secretKey: [
-    //     125, 62, 16, 133, 107, 33, 255, 186, 215, 151, 156, 9, 225, 118, 213, 175, 41, 138, 90, 128,
-    //     198, 57, 176, 54, 161, 212, 50, 133, 236, 230, 186, 254,
-    //   ],
-    // };
-
-    // const message = new Uint8Array(32).fill(1);
-    // vector.publicKey = generatePublicKey(vector.secretKey);
-    // vector.signature = sign(vector.secretKey, vector.publicKey, message);
-    // vector.verified = verify(vector.publicKey, message, vector.signature);
-
-    // console.log(vector.secretKey);
-    // console.log(Array.from(vector.publicKey));
-    // console.log(Array.from(message));
-    // console.log(Array.from(vector.signature));
-
-    // const t0 = performance.now();
-    // const pairs = [];
-    // for (let i = 0; i < 10; i++) {
-    //   const secretKey = new Uint8Array(32).fill(1);
-    //   pairs.push({
-    //     secretKey,
-    //     publicKey: generatePublicKey(secretKey),
-    //   });
-    // }
-    // const t1 = performance.now();
-    // console.log('Generating 10_000 public keys took', t1 - t0, 'ms');
-
-    // const signatures = [];
-    // for (let i = 0; i < pairs.length; i++) {
-    //   signatures.push(sign(pairs[i].secretKey, pairs[i].publicKey, message));
-    // }
-    // const t2 = performance.now();
-    // console.log('Generating 10_000 sigs took', t2 - t1, 'ms');
-
-    // for (let i = 0; i < pairs.length; i++) {
-    //   console.log(verify(pairs[i].publicKey, message, signatures[i]));
-    // }
-    // const t3 = performance.now();
-    // console.log('Verifying 10_000 sigs took', t3 - t2, 'ms');
   };
 });
 
@@ -290,5 +209,6 @@ crypto.SIGNATURE_LENGTH = 64;
 crypto.PRIVATE_KEY_LENGTH = 32;
 crypto.PUBLIC_KEY_LENGTH = 32;
 crypto.DIGEST_LENGTH = 32;
+crypto.NONCE_LENGTH = 32;
 
 export default crypto;

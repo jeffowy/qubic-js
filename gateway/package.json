@@ -10,7 +10,8 @@
   "keywords": [],
   "author": "Chris Dukakis<chrisdukakis@gmail.com>",
   "dependencies": {
-    "wrtc": "^0.4.7",
+    "qubic-crypto": "workspace:*",
+    "qubic-gossip": "workspace:*",
     "ws": "^8.12.0"
   }
 }

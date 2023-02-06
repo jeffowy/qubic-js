@@ -20,10 +20,12 @@ importers:
 
   gateway:
     specifiers:
-      wrtc: ^0.4.7
+      qubic-crypto: workspace:*
+      qubic-gossip: workspace:*
       ws: ^8.12.0
     dependencies:
-      wrtc: 0.4.7
+      qubic-crypto: link:../crypto
+      qubic-gossip: link:../gossip
       ws: 8.12.0
 
   gossip:
@@ -32,11 +34,13 @@ importers:
       qubic-converter: workspace:*
       qubic-crypto: workspace:*
       wrtc: ^0.4.7
+      ws: ^8.12.0
     dependencies:
-      isomorphic-ws: 5.0.0
+      isomorphic-ws: 5.0.0_ws@8.12.0
       qubic-converter: link:../converter
       qubic-crypto: link:../crypto
       wrtc: 0.4.7
+      ws: 8.12.0
 
   peer-matcher:
     specifiers:
@@ -209,10 +213,12 @@ packages:
     resolution: {integrity: sha512-VLghIWNM6ELQzo7zwmcg0NmTVyWKYjvIeM83yjp0wRDTmUnrM678fQbcKBo6n2CJEF0szoG//ytg+TKla89ALQ==}
     dev: false
 
-  /isomorphic-ws/5.0.0:
+  /isomorphic-ws/5.0.0_ws@8.12.0:
     resolution: {integrity: sha512-muId7Zzn9ywDsyXgTIafTry2sV3nySZeUDe6YedVd1Hvuuep5AsIlqK+XefWpYTyJG5e503F2xIuT2lcU6rCSw==}
     peerDependencies:
       ws: '*'
+    dependencies:
+      ws: 8.12.0
     dev: false
 
   /minimatch/3.1.2:

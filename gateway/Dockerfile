@@ -5,11 +5,11 @@ RUN npm install -g pnpm @mapbox/node-pre-gyp
 
 WORKDIR /usr/src/qubic-js-gateway
 
-COPY package.json ./
+RUN mkdir gateway 
 
+COPY ./gateway/package.json ./gateway
 COPY . .
 
-RUN pnpm fetch --prod \
-    && pnpm i --prod
-
-CMD [ "node", "./src/gateway.js" ]
+RUN cd gateway && pnpm fetch --prod
+RUN CI=true pnpm i --prod --frozen-lockfile
+CMD [ "node", "./gateway/src/gateway.js" ]

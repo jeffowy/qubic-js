@@ -104,6 +104,7 @@ const TRANSACTION_INPUT_TYPE_OFFSET = TRANSACTION_TICK_OFFSET + TRANSACTION_TICK
 const TRANSACTION_INPUT_TYPE_LENGTH = 2;
 const TRANSACTION_INPUT_SIZE_OFFSET = TRANSACTION_INPUT_TYPE_OFFSET + TRANSACTION_INPUT_TYPE_LENGTH;
 const TRANSACTION_INPUT_SIZE_LENGTH = 2;
+
 const TRANSACTION_PUBLICATION_TICK_OFFSET = 4;
 
 const _451 = function ({
@@ -222,7 +223,6 @@ const _451 = function ({
       const result = await resourceTest(resourceTestSolution);
       if (result !== false) {
         system.scores.set(result.computorPublicKey, result.score);
-        console.log(`Received solution [${result.computorPublicKey}], score: ${result.score}`);
         propagate(result.digest);
       } else {
         closeAndReconnect();
@@ -239,6 +239,8 @@ const _451 = function ({
         const tickView = new DataView(tick.buffer);
         const receivedTick = tickView[`getUint${TICK_TICK_LENGTH * 8}`](TICK_TICK_OFFSET, true);
         if (receivedTick > system.tick) {
+          console.log('Received tick:', receivedTick);
+
           const { K12, schnorrq } = await crypto;
           const digest = new Uint8Array(crypto.DIGEST_LENGTH);
           tickView.setUint8(TICK_COMPUTOR_INDEX_OFFSET, tickView.getUint8(TICK_COMPUTOR_INDEX_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_TICK, true);
@@ -247,7 +249,7 @@ const _451 = function ({
 
           const computorIndex = tickView[`getUint${TICK_COMPUTOR_INDEX_LENGTH * 8}`](TICK_COMPUTOR_INDEX_OFFSET, true);
 
-          if (schnorrq.verify(system.computors[computorIndex], digest, tick.slice(TICK_SIGNATURE_OFSSET, TICK_SIGNATURE_OFSSET + TICK_SIGNATURE_LENGTH)) === 1) {
+          if (schnorrq.verify(system.computors[computorIndex], digest, tick.slice(TICK_SIGNATURE_OFSSET, TICK_SIGNATURE_OFSSET + crypto.SIGNATURE_LENGTH)) === 1) {
             propagate(computorIndex, receivedTick)
 
             if (system.ticks.has(receivedTick) === false) {
@@ -272,7 +274,7 @@ const _451 = function ({
 
               let numberOfAlignedTicks = 1;
               for (let i = 0; i < NUMBER_OF_COMPUTORS; i++) {
-                if (computorIndex !== i) {
+                if (computorIndex !== i && ticks[i] !== undefined) {
                   if (
                     ticks[computorIndex].initSpectrumDigest === ticks[i].initSpectrumDigest &&
                     ticks[computorIndex].initUniverseDigest === ticks[i].initUniverseDigest &&
@@ -285,19 +287,20 @@ const _451 = function ({
                     ticks[computorIndex].saltedComputerDigest === ticks[i].saltedComputerDigest &&
                     ticks[computorIndex].digestOfTransactions === ticks[i].digestOfTransactions
                   ) {
-
                     if (numberOfAlignedTicks >= QUORUM) {
                       if (system.tick < receivedTick) {
                         system.tick = receivedTick;
                         system.ticks.delete(receivedTick);
                         system.digestsOfTransactionsByTick.set(receivedTick, ticks[computorIndex].digestOfTransactions);
-                        that.emit(tick, ticks[computorIndex]);
+
+                        that.emit('tick', ticks[computorIndex]);
                       }
                       break;
                     }
                   }
                 }
               }
+              console.log('Number of aligned ticks:', numberOfAlignedTicks);
             }
           } else {
             closeAndReconnect();
@@ -311,6 +314,7 @@ const _451 = function ({
     }
 
     const launch = function () {
+      network.launch();
       network.addListener('computors', computorsListener);
       network.addListener('resource-test-solution', resourceTestSolutionListener);
       network.addListener('terminator', terminatorListener);
@@ -319,12 +323,12 @@ const _451 = function ({
     };
 
     const shutdown = function () {
+      network.shutdown();
       network.removeListener('computors', computorsListener);
       network.removeListener('resource-test-solution', resourceTestSolutionListener);
       network.removeListener('terminator', terminatorListener);
       network.removeListener('tick', tickListener);
       network.removeListener('peers', peersListener);
-      network.shutdown();
     };
 
     const broadcastTransaction = function (transaction) {
@@ -333,14 +337,14 @@ const _451 = function ({
       let numberOfRebroadcastings = 1;
       setTimeout(function rebroadcast() {
         if (transactionView[`getUint${TRANSACTION_TICK_LENGTH * 8}`](TRANSACTION_TICK_OFFSET) > system.tick) {
-          numberOfRebroadcastings++;
+          console.log('Rebroadcasting...', transaction);
           network.broadcast(transaction);
         }
-        setTimeout(rebroadcast, numberOfRebroadcastings * OWN_TRANSACTION_REBROADCAST_TIMEOUT);
+        setTimeout(rebroadcast, ++numberOfRebroadcastings * OWN_TRANSACTION_REBROADCAST_TIMEOUT);
       }, OWN_TRANSACTION_REBROADCAST_TIMEOUT);
     };
 
-    const entity = async function (seed, i = 0) {
+    const entity = async function (seed, index = 0) {
       if (new RegExp(`^[a-z]{${SEED_IN_LOWERCASE_LATIN_LENGTH}}$`).test(seed) === false) {
         throw new Error(`Invalid seed. Must be ${SEED_IN_LOWERCASE_LATIN_LENGTH} lowercase latin chars.`);
       }
@@ -354,26 +358,22 @@ const _451 = function ({
       const { K12, schnorrq } = await crypto;
       const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
-      const privateKey = function (seed, index) {
-        const preimage = seedStringToBytes(seed);
-      
-        while (index-- > 0) {
-          for (let i = 0; i < preimage.length; i++) {
-            if (++preimage[i] > ALPHABET.length) {
-              preimage[i] = 1;
-            } else {
-              break;
-            }
+      const preimage = seedStringToBytes(seed);
+      while (index-- > 0) {
+        for (let i = 0; i < preimage.length; i++) {
+          if (++preimage[i] > ALPHABET.length) {
+            preimage[i] = 1;
+          } else {
+            break;
           }
         }
-      
-        const key = new Uint8Array(crypto.PRIVATE_KEY_LENGTH);
-        K12(preimage, key, crypto.PRIVATE_KEY_LENGTH);
-        return key;
-      };
+      }
+    
+      const privateKey = new Uint8Array(crypto.PRIVATE_KEY_LENGTH);
+      K12(preimage, privateKey, crypto.PRIVATE_KEY_LENGTH);
       
       const identityBytes = new Uint8Array(crypto.PUBLIC_KEY_LENGTH);
-      identityBytes.set(schnorrq.generatePublicKey(privateKey(seed, i)));
+      identityBytes.set(schnorrq.generatePublicKey(privateKey));
       state.identity = publicKeyBytesToString(identityBytes);
 
       system.entities.add(state.identity);
@@ -388,9 +388,9 @@ const _451 = function ({
             transaction({ destination, energy });
           }, 1000);
         }
-        const tx = new Uint8Array(HEADER_LENGTH + TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH + crypto.SIGNATURE_LENGTH).fill(0);
+        const tx = new Uint8Array(TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH + crypto.SIGNATURE_LENGTH).fill(0);
         const txView = new DataView(tx.buffer);
-        const publicKey = identityBytes.subarray(0, crypto.PUBLIC_KEY_LENGTH);
+        const publicKey = identityBytes.slice(0, crypto.PUBLIC_KEY_LENGTH);
 
         txView[`setUint${SIZE_LENGTH * 8}`](SIZE_OFFSET, tx.length, true);
         txView[`setUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, MESSAGE_TYPES.BROADCAST_TRANSACTION, true);
@@ -398,24 +398,27 @@ const _451 = function ({
 
         tx.set(publicKey, TRANSACTION_SOURCE_PUBLIC_KEY_OFFSET);
         tx.set(
-          publicKeyStringToBytes(destination).subarray(0, crypto.PUBLIC_KEY_LENGTH),
+          publicKeyStringToBytes(destination).slice(0, crypto.PUBLIC_KEY_LENGTH),
           TRANSACTION_DESTINATION_PUBLIC_KEY_OFFSET
         );
         txView.setBigUint64(TRANSACTION_AMOUNT_OFFSET, BigInt(energy), true);
         if (!tick) {
-          let tickOffset = system.tick + TRANSACTION_PUBLICATION_TICK_OFFSET;
-          if (state.tickOffset < tickOffset) {
-            state.tickOffset = tickOffset;
-          } else {
-            state.tickOffset = tickOffset + 1;
+          tick = system.tick + TRANSACTION_PUBLICATION_TICK_OFFSET;
+          if (state.tickOffset === 0) {
+            state.tickOffset = tick + 1;
+          } else if (state.tickOffset > tick) {
+            tick = state.tickOffset;
+            state.tickOffset++;
           }
         }
-        txView[`setUint${TRANSACTION_TICK_LENGTH * 8}`](TRANSACTION_TICK_OFFSET, tick || state.tickOffset, true);
+        txView[`setUint${TRANSACTION_TICK_LENGTH * 8}`](TRANSACTION_TICK_OFFSET, tick, true);
 
         const { schnorrq, K12 } = await crypto;
         const digest = new Uint8Array(crypto.DIGEST_LENGTH);
-        K12(tx.subarray(TRANSACTION_SOURCE_PUBLIC_KEY_OFFSET, -crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
-        tx.set(schnorrq.sign(privateKey(seed, i), publicKey, digest), HEADER_LENGTH + TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH);
+        K12(tx.slice(TRANSACTION_SOURCE_PUBLIC_KEY_OFFSET, TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH), digest, crypto.DIGEST_LENGTH);
+        tx.set(schnorrq.sign(privateKey, publicKey, digest), TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH);
+
+        console.log(schnorrq.verify(publicKey, digest, tx.slice(TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH, TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH + crypto.SIGNATURE_LENGTH)));
     
         console.log('Transaction:', tx);
         broadcastTransaction(tx);

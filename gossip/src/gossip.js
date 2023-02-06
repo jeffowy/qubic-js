@@ -69,7 +69,7 @@ const SIGNAL_TYPES = {
 
 export const MESSAGE_TYPES = {
   EXCHANGE_PUBLIC_PEERS: 0,
-  BROADCAST_RESOURCE_TESTING_SOLUTION: 1,
+  BROADCAST_RESOURCE_TEST_SOLUTION: 1,
   BROADCAST_COMPUTORS: 2,
   BROADCAST_TICK: 3,
   BROADCAST_REVENUES: 4,
@@ -94,13 +94,14 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
 
   const channels = Array(NUMBER_OF_CHANNELS);
+  const closeFunctions = Array(NUMBER_OF_CHANNELS);
   const numbersOfFailingChannelsInARow = Array(NUMBER_OF_CHANNELS).fill(0);
 
   const dejavu = {
     computors: Array(NUMBER_OF_CHANNELS).fill(0),
     resourceTestSolutionsByDigest: new Map(),
     ticksByComputorIndex: new Map(),
-  }
+  };
 
   const clearResourceTestSolutionsDejavu = function () {
     dejavu.resourceTestSolutionsByDigest.clear();
@@ -111,13 +112,13 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
 
     const channel = function (i) {
       const socket = new WebSocket(`wss://${signalingServers[0] /* TODO: support many servers */}`);
-      let pc
-      let state = 0;
-      let closeAndReconnectTimeout;
-      let inactiveChannelTimeout;
-
       socket.binaryType = 'arraybuffer';
 
+      let pc
+      let state = 0;
+  
+      let closeAndReconnectTimeout;
+      let inactiveChannelTimeout;
       let connectionAttemptTimeout = setTimeout(function () {
         if (state++ > 0) {
           return;
@@ -134,6 +135,20 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
         channel(i);
       }, MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION + (++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER));
 
+
+      closeFunctions[i] = function () {
+        clearTimeout(closeAndReconnectTimeout);
+        clearTimeout(connectionAttemptTimeout);
+        clearTimeout(inactiveChannelTimeout);
+        socket.close();
+        pc?.close();
+        pc = undefined;
+        if (channels[i]?.readyState === 'open') {
+          channels[i].close();
+          channels[i] = undefined;
+        }
+      }
+
       const closeAndReconnect = function (timeoutDuration) {
         if (state++ > 0) {
           return;
@@ -148,7 +163,6 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
             channels[i].close();
             channels[i] = undefined;
           }
-          dejavu.computors[i] = 0;
           channel(i);
         }, timeoutDuration);
       }
@@ -211,6 +225,8 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                 const dataView = new DataView(event.data);
                 const data = new Uint8Array(event.data);
 
+                that.emit('message', data);
+
                 console.log(
                   'Message type:', dataView[`getUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, true),
                   '| Channels:', channels.filter(c => c?.readyState === 'open' || c?.readyState === 'closing').length + '/' + NUMBER_OF_CHANNELS
@@ -241,7 +257,7 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                     });
                     break;
 
-                  case MESSAGE_TYPES.BROADCAST_RESOURCE_TESTING_SOLUTION:
+                  case MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION:
                     that.emit('resource-test-solution', {
                       resourceTestSolution: data,
                       closeAndReconnect: function () {
@@ -300,6 +316,17 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                         }
                       }
                     });
+                    break;
+                  case MESSAGE_TYPES.BROADCAST_TRANSACTION:
+                    that.emit('transaction', {
+                      transaction: data,
+                      closeAndReconnect: function () {
+                        closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
+                      },
+                      propagate: function () {
+
+                      },
+                    })
                     break;
                   default:
                 }
@@ -411,14 +438,16 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
       });
       
       socket.addEventListener('close', function () {
-        if (channels[i]?.readyState !== 'open') {
-          //closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
+        if (channels[i]?.readyState !== 'open' || channels[i]?.readyState === 'closing') {
+          closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
         }
       });
     };
 
-    for (let i = 0; i < NUMBER_OF_CHANNELS; i++) {
-      channel(i);
+    const launch = function () {
+      for (let i = 0; i < NUMBER_OF_CHANNELS; i++) {
+        channel(i);
+      }
     }
 
     const broadcast = function (data) {
@@ -430,12 +459,15 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
     };
 
     const shutdown = function () {
-
+      for (let i = 0; i < NUMBER_OF_CHANNELS; i++) {
+        closeFunctions[i]();
+      }
     };
 
     return Object.assign(
       this,
       {
+        launch,
         broadcast,
         clearResourceTestSolutionsDejavu,
         shutdown,
@@ -443,5 +475,4 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
       EventEmitter.prototype
     );
   }.call({});
-}
-
+};
