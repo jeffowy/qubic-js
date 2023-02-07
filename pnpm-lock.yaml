@@ -20,10 +20,12 @@ importers:
 
   gateway:
     specifiers:
+      qubic-converter: workspace:*
       qubic-crypto: workspace:*
       qubic-gossip: workspace:*
       ws: ^8.12.0
     dependencies:
+      qubic-converter: link:../converter
       qubic-crypto: link:../crypto
       qubic-gossip: link:../gossip
       ws: 8.12.0
