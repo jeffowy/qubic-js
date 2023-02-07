@@ -53,6 +53,7 @@ import cluster from 'node:cluster';
 import net from 'node:net';
 import crypto from 'qubic-crypto';
 import { gossip, MESSAGE_TYPES, SIZE_OFFSET, SIZE_LENGTH, PROTOCOL_VERSION_OFFSET, PROTOCOL_VERSION_LENGTH, TYPE_OFFSET, TYPE_LENGTH, HEADER_LENGTH, NUMBER_OF_CHANNELS } from 'qubic-gossip';
+import { publicKeyBytesToString } from 'qubic-converter';
 
 const NUMBER_OF_AVAILABLE_PROCESSORS = process.env.NUMBER_OF_AVAILABLE_PROCESSORS || 3;
 const QUBIC_PORT = process.env.QUBIC_PORT || 21841;
@@ -152,7 +153,6 @@ const gateway = function () {
         if (schnorrq.verify(transaction.slice(HEADER_LENGTH, HEADER_LENGTH + crypto.PUBLIC_KEY_LENGTH), digest, transaction.slice(-crypto.SIGNATURE_LENGTH))) {
           socket.write(transaction);
           numberOfOutboundComputorRequests++;
-          console.log('valid tx');
         }
       } else {
         closeAndReconnect();
@@ -169,6 +169,23 @@ const gateway = function () {
           const computor = Array.from(response.subarray(i * 4, (i + 1) * 4)).join('.');
           if (COMPUTORS.indexOf(computor) === -1) {
             COMPUTORS.push(computor);
+          }
+        }
+        return;
+      }
+
+      if (response[`readUint${TYPE_LENGTH * 8}LE`](TYPE_OFFSET) === MESSAGE_TYPES.BROADCAST_TRANSACTION) {
+        const transactionView = new DataView(response.buffer);
+        if (transactionView[`getUint${SIZE_LENGTH * 8}`](SIZE_OFFSET, true) === transaction.byteLength) {
+          const { K12, schnorrq } = await crypto;
+          const digest = new Uint8Array(crypto.DIGEST_LENGTH);
+          K12(transaction.slice(HEADER_LENGTH, transaction.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
+  
+          if (schnorrq.verify(transaction.slice(HEADER_LENGTH, HEADER_LENGTH + crypto.PUBLIC_KEY_LENGTH), digest, transaction.slice(-crypto.SIGNATURE_LENGTH))) {
+            numberOfOutboundWebRTCRequests += numberOfPeers;
+            network.broadcast(response);
+
+            console.log(`Transaction from:`, publicKeyBytesToString(response.slice(HEADER_LENGTH, HEADER_LENGTH + crypto.PUBLIC_KEY_LENGTH)));
           }
         }
         return;
@@ -308,4 +325,3 @@ if (cluster.isPrimary) {
 
   console.log(`Worker ${process.pid} is running.`);
 }
-

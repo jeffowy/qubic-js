@@ -12,6 +12,7 @@
   "dependencies": {
     "qubic-crypto": "workspace:*",
     "qubic-gossip": "workspace:*",
+    "qubic-converter": "workspace:*",
     "ws": "^8.12.0"
   }
 }

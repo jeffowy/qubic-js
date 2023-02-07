@@ -227,11 +227,6 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
 
                 that.emit('message', data);
 
-                console.log(
-                  'Message type:', dataView[`getUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, true),
-                  '| Channels:', channels.filter(c => c?.readyState === 'open' || c?.readyState === 'closing').length + '/' + NUMBER_OF_CHANNELS
-                );
-
                 switch (dataView[`getUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, true)) {
                   case MESSAGE_TYPES.BROADCAST_COMPUTORS:
                     that.emit('computors', {
