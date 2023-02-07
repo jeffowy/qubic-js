@@ -161,7 +161,7 @@ const gateway = function () {
 
     network.addListener('transaction', onTransaction);
 
-    const responseProcessor = function (response) {
+    const responseProcessor = async function (response) {
       numberOfInboundComputorRequests++;
 
       if (response[`readUint${TYPE_LENGTH * 8}LE`](TYPE_OFFSET) === MESSAGE_TYPES.EXCHANGE_PUBLIC_PEERS) {
