@@ -176,7 +176,7 @@ const gateway = function () {
 
       if (response[`readUint${TYPE_LENGTH * 8}LE`](TYPE_OFFSET) === MESSAGE_TYPES.BROADCAST_TRANSACTION) {
         const transactionView = new DataView(response.buffer);
-        if (transactionView[`getUint${SIZE_LENGTH * 8}`](SIZE_OFFSET, true) === transaction.byteLength) {
+        if (transactionView[`getUint${SIZE_LENGTH * 8}`](SIZE_OFFSET, true) === response.byteLength) {
           const { K12, schnorrq } = await crypto;
           const digest = new Uint8Array(crypto.DIGEST_LENGTH);
           K12(transaction.slice(HEADER_LENGTH, transaction.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
