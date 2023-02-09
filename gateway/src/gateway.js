@@ -65,7 +65,7 @@ const PEER_MATCHER = process.env.PEER_MATCHER || '0.0.0.0:8081';
 const ICE_SERVER = process.env.ICE_SERVER || 'stun:0.0.0.0:3478';
 
 MESSAGE_TYPES.EXCHANGE_PUBLIC_PEERS = 0;
-MESSAGE_TYPES.REQUEST_COMPUTORS = 1;
+MESSAGE_TYPES.REQUEST_COMPUTORS = 11;
 
 const gateway = function () {
   const store = {
