@@ -51,13 +51,10 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 'use strict';
 
 export const isZero = function (array) {
-  let result = true;
   for (let i = 0; i < array.length; i++) {
     if (array[i] !== 0) {
-      result = false;
-      break;
+      return false;
     }
   }
-
-  return result;
+  return true;
 }

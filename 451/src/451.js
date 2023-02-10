@@ -53,7 +53,7 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import EventEmitter from 'events';
 import crypto from 'qubic-crypto';
 import { seedStringToBytes, digestBytesToString, publicKeyStringToBytes, publicKeyBytesToString } from 'qubic-converter';
-import { gossip, SIZE_OFFSET, SIZE_LENGTH, TYPE_LENGTH, TYPE_OFFSET, PROTOCOL_VERSION_OFFSET, PROTOCOL_VERSION_LENGTH, HEADER_LENGTH, MESSAGE_TYPES } from 'qubic-gossip';
+import { gossip, SIZE_OFFSET, SIZE_LENGTH, TYPE_LENGTH, TYPE_OFFSET, PROTOCOL_VERSION_OFFSET, PROTOCOL_VERSION_LENGTH, HEADER_LENGTH, MESSAGE_TYPES, TICK_COMPUTOR_INDEX_LENGTH, TICK_COMPUTOR_INDEX_OFFSET, TICK_EPOCH_LENGTH, TICK_EPOCH_OFFSET, TICK_TICK_LENGTH, TICK_TICK_OFFSET } from 'qubic-gossip';
 import { resourceTester } from './resource-tester.js';
 import { computorsAlignmentTester } from './computors-alignment-tester.js';
 import { isZero } from './is-zero.js';
@@ -72,13 +72,6 @@ const COMPUTORS_PUBLIC_KEYS_OFFSET = COMPUTORS_EPOCH_OFFSET + COMPUTORS_EPOCH_LE
 const COMPUTORS_PUBLIC_KEYS_LENGTH = crypto.PUBLIC_KEY_LENGTH * NUMBER_OF_COMPUTORS;
 const COMPUTORS_SIGNATURE_OFFSET = COMPUTORS_PUBLIC_KEYS_OFFSET + COMPUTORS_PUBLIC_KEYS_LENGTH;
 
-
-const TICK_COMPUTOR_INDEX_OFFSET = HEADER_LENGTH;
-const TICK_COMPUTOR_INDEX_LENGTH = 2;
-const TICK_EPOCH_OFFSET = TICK_COMPUTOR_INDEX_OFFSET + TICK_COMPUTOR_INDEX_LENGTH;
-const TICK_EPOCH_LENGTH = 2;
-const TICK_TICK_OFFSET = TICK_EPOCH_OFFSET + TICK_EPOCH_LENGTH;
-const TICK_TICK_LENGTH = 4;
 const TICK_INIT_SPECTRUM_DIGEST_OFFSET = TICK_TICK_OFFSET + TICK_TICK_LENGTH;
 const TICK_INIT_UNIVERSE_DIGEST_OFFSET = TICK_INIT_SPECTRUM_DIGEST_OFFSET + crypto.DIGEST_LENGTH;
 const TICK_INIT_COMPUTER_DIGEST_OFFSET = TICK_INIT_UNIVERSE_DIGEST_OFFSET + crypto.DIGEST_LENGTH;
@@ -159,7 +152,7 @@ const _451 = function ({
     const computorsAlignmentTest = computorsAlignmentTester();
 
 
-    const network = gossip({ signalingServers, iceServers, store });
+    const network = gossip({ signalingServers, iceServers, store, protocol });
 
     const computorsListener = async function ({ computors, channel, propagate, closeAndReconnect }) {
       const { K12, schnorrq } = await crypto;
@@ -238,7 +231,8 @@ const _451 = function ({
       if (system.epoch > 0) {
         const tickView = new DataView(tick.buffer);
         const receivedTick = tickView[`getUint${TICK_TICK_LENGTH * 8}`](TICK_TICK_OFFSET, true);
-        if (receivedTick > system.tick) {
+
+        if (receivedTick > system.tick && system.epoch === tickView[`getUint${TICK_EPOCH_LENGTH}`](TICK_EPOCH_OFFSET, true)) {
           console.log('Received tick:', receivedTick);
 
           const { K12, schnorrq } = await crypto;
@@ -313,6 +307,10 @@ const _451 = function ({
       that.emit('peers', numberOfPeers);
     }
 
+    const messageListener = function (message) {
+      that.emit('message', message);
+    }
+
     const launch = function () {
       network.launch();
       network.addListener('computors', computorsListener);
@@ -320,6 +318,7 @@ const _451 = function ({
       network.addListener('terminator', terminatorListener);
       network.addListener('tick', tickListener);
       network.addListener('peers', peersListener);
+      network.addListener('message', messageListener);
     };
 
     const shutdown = function () {
@@ -329,19 +328,30 @@ const _451 = function ({
       network.removeListener('terminator', terminatorListener);
       network.removeListener('tick', tickListener);
       network.removeListener('peers', peersListener);
+      network.removeListener('message', messageListener);
     };
 
-    const broadcastTransaction = function (transaction) {
+    const broadcastTransaction = function (transaction, state, tick) {
       network.broadcast(transaction);
       const transactionView = new DataView(transaction.buffer);
-      let numberOfRebroadcastings = 1;
+      let numberOfBroadcastings = 0;
+      let cancel = false;
       setTimeout(function rebroadcast() {
-        if (transactionView[`getUint${TRANSACTION_TICK_LENGTH * 8}`](TRANSACTION_TICK_OFFSET) > system.tick) {
-          console.log('Rebroadcasting...', transaction);
-          network.broadcast(transaction);
+        if (state !== undefined && (state.tickOffset - 1) > tick) {
+          return;
         }
-        setTimeout(rebroadcast, ++numberOfRebroadcastings * OWN_TRANSACTION_REBROADCAST_TIMEOUT);
+        if (transactionView[`getUint${TRANSACTION_TICK_LENGTH * 8}`](TRANSACTION_TICK_OFFSET, true) > system.tick) {
+          if (cancel === false) {
+            console.log('Rebroadcasting...', transaction);
+            network.rebroadcast(transaction);
+            setTimeout(rebroadcast, ++numberOfBroadcastings * OWN_TRANSACTION_REBROADCAST_TIMEOUT);
+          }
+        }
       }, OWN_TRANSACTION_REBROADCAST_TIMEOUT);
+
+      return function () {
+        cancel = true;
+      }
     };
 
     const entity = async function (seed, index = 0) {
@@ -374,7 +384,14 @@ const _451 = function ({
       
       const identityBytes = new Uint8Array(crypto.PUBLIC_KEY_LENGTH);
       identityBytes.set(schnorrq.generatePublicKey(privateKey));
-      state.identity = publicKeyBytesToString(identityBytes);
+
+      const identityWithChecksumBytes = new Uint8Array(crypto.PUBLIC_KEY_LENGTH + crypto.CHECKSUM_LENGTH);
+      const checksum = new Uint8Array(crypto.CHECKSUM_LENGTH);
+      K12(identityBytes, checksum, crypto.CHECKSUM_LENGTH);
+      identityWithChecksumBytes.set(identityBytes);
+      identityWithChecksumBytes.set(checksum, crypto.PUBLIC_KEY_LENGTH);
+
+      state.identity = publicKeyBytesToString(identityWithChecksumBytes);
 
       system.entities.add(state.identity);
 
@@ -382,7 +399,28 @@ const _451 = function ({
         return state.energy;
       }
 
+      const verifyChecksum = function (identity) {
+        const buffer = publicKeyStringToBytes(identity);
+        const checksum = new Uint8Array(crypto.CHECKSUM_LENGTH);
+        K12(buffer.slice(0, crypto.PUBLIC_KEY_LENGTH), checksum, crypto.CHECKSUM_LENGTH);
+        const identityWithChecksumBytes = new Uint8Array(crypto.PUBLIC_KEY_LENGTH + crypto.CHECKSUM_LENGTH);
+        identityWithChecksumBytes.set(buffer);
+        identityWithChecksumBytes.set(checksum, crypto.PUBLIC_KEY_LENGTH);
+        if (identity.slice(-4) === publicKeyBytesToString(identityWithChecksumBytes).slice(-4)){
+          return true;
+        }
+        return false;
+      }
+
       const transaction = async function ({ destination, energy, tick }) {
+        if (verifyChecksum(destination) === false) {
+          throw new Error('Invalid destination checksum.');
+        }
+
+        if (Number.isInteger(tick) === false) {
+          throw new Error('Invalid tick.');
+        }
+
         if (!tick && system.tick === 0) {
           return setTimeout(function () {
             transaction({ destination, energy });
@@ -410,6 +448,8 @@ const _451 = function ({
             tick = state.tickOffset;
             state.tickOffset++;
           }
+        } else if (state.tickOffset < tick){
+          state.tickOffset = tick + 1;
         }
         txView[`setUint${TRANSACTION_TICK_LENGTH * 8}`](TRANSACTION_TICK_OFFSET, tick, true);
 
@@ -417,17 +457,16 @@ const _451 = function ({
         const digest = new Uint8Array(crypto.DIGEST_LENGTH);
         K12(tx.slice(TRANSACTION_SOURCE_PUBLIC_KEY_OFFSET, TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH), digest, crypto.DIGEST_LENGTH);
         tx.set(schnorrq.sign(privateKey, publicKey, digest), TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH);
-
-        console.log(schnorrq.verify(publicKey, digest, tx.slice(TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH, TRANSACTION_INPUT_SIZE_OFFSET + TRANSACTION_INPUT_SIZE_LENGTH + crypto.SIGNATURE_LENGTH)));
     
         console.log('Transaction:', tx);
-        broadcastTransaction(tx);
+        broadcastTransaction(tx, state, tick);
 
         return tx;
       };
 
       return {
         identity: state.identity,
+        verifyChecksum,
         getEnergy,
         transaction,
       };

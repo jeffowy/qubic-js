@@ -53,6 +53,8 @@ THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 import EventEmitter from 'events';
 import WebSocket from 'isomorphic-ws';
 import wrtc from 'wrtc';
+import crypto from 'qubic-crypto';
+import { digestBytesToString } from 'qubic-converter';
 
 export const NUMBER_OF_CHANNELS = 4;
 const MIN_WEBRTC_CONNECTION_ATTEMPT_DURATION = 6 * 1000;
@@ -85,12 +87,28 @@ export const TYPE_OFFSET = PROTOCOL_VERSION_OFFSET + PROTOCOL_VERSION_LENGTH;
 export const TYPE_LENGTH = 2;
 export const HEADER_LENGTH = TYPE_OFFSET + TYPE_LENGTH;
 
+export const RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET = HEADER_LENGTH;
+
+export const TICK_COMPUTOR_INDEX_OFFSET = HEADER_LENGTH;
+export const TICK_COMPUTOR_INDEX_LENGTH = 2;
+export const TICK_EPOCH_OFFSET = TICK_COMPUTOR_INDEX_OFFSET + TICK_COMPUTOR_INDEX_LENGTH;
+export const TICK_EPOCH_LENGTH = 2;
+export const TICK_TICK_OFFSET = TICK_EPOCH_OFFSET + TICK_EPOCH_LENGTH;
+export const TICK_TICK_LENGTH = 4;
+
 const MIN_COMPUTORS_PROPAGATION_TIMEOUT = 30 * 1000;
 const MIN_RESOURCE_TEST_SOLUTION_PROPAGATION_TIMEOUT = 30 * 1000;
 const MIN_TICK_PROPAGATION_TIMEOUT = 3 * 1000;
 const TICK_PROPAGATION_PROBABILTY = 2 / 3;
 
-export const gossip = function ({ signalingServers, iceServers, store }) {
+const MAX_BIG_INT = 2n ** 64n - 1n;
+const TRANSACTION_DEJAVU_FALSE_POSITIVE_PROBABILITY = 0.1;
+const TRANSACTION_DEJAVU_CAPACITY = 16000000;
+const TRANSACTION_DEJAVU_BIT_LENGTH = Math.ceil(-(TRANSACTION_DEJAVU_CAPACITY * Math.log(TRANSACTION_DEJAVU_FALSE_POSITIVE_PROBABILITY)) / (Math.log(2) ** 2));
+const NUMBER_OF_TRANSACTION_REBROADCASTINGS = 5;
+const TRANSACTION_REBROADCAST_TIMEOUT = 1000;
+
+export const gossip = function ({ signalingServers, iceServers, store, protocol }) {
   const { RTCPeerConnection, RTCIceCandidate, RTCSessionDescription } = wrtc;
 
   const channels = Array(NUMBER_OF_CHANNELS);
@@ -101,11 +119,136 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
     computors: Array(NUMBER_OF_CHANNELS).fill(0),
     resourceTestSolutionsByDigest: new Map(),
     ticksByComputorIndex: new Map(),
+    transactions: new Uint8Array(TRANSACTION_DEJAVU_BIT_LENGTH / 8),
   };
 
   const clearResourceTestSolutionsDejavu = function () {
     dejavu.resourceTestSolutionsByDigest.clear();
   }
+
+  const propagateComputors = function (i, data, callback) {
+    const t = Date.now();
+    dejavu.computors[i] = t;
+    for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
+      if (i !== j) {
+        if (t - dejavu.computors[j] > MIN_COMPUTORS_PROPAGATION_TIMEOUT) {
+          if (channels[j]?.readyState === 'open') {
+            dejavu.computors[j] = t;
+            channels[j].send(data);
+            if (typeof callback === 'function') {
+              callback();
+            }
+          }
+        }
+      }
+    }
+  };
+
+  const propagateResourceTestingSolution = async function (i, data, digest, callback) {
+    if (digest === undefined) {
+      const resourceTestSolution = new Uint8Array(data);
+      const resourceTestSolutionView = new DataView(data);
+      const digestBytes = new Uint8Array(crypto.DIGEST_LENGTH);
+      const { K12 } = await crypto;
+      resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
+      K12(resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, RESOURCE_TEST_SOLUTION_SIGNATURE_OFFSET), digest, crypto.DIGEST_LENGTH);
+      resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
+      digest = digestBytesToString(digestBytes);
+    }
+
+    const t = Date.now();
+    if (dejavu.resourceTestSolutionsByDigest.has(digest) === false) {
+      dejavu.resourceTestSolutionsByDigest.set(digest, Array(NUMBER_OF_CHANNELS).fill(0));
+    }
+
+    dejavu.resourceTestSolutionsByDigest.get(digest)[i] = t;
+
+    for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
+      if (i !== j) {
+        if (t - dejavu.resourceTestSolutionsByDigest.get(digest)[j] > MIN_RESOURCE_TEST_SOLUTION_PROPAGATION_TIMEOUT) {
+          if (channels[j]?.readyState === 'open') {
+            dejavu.resourceTestSolutionsByDigest.get(digest)[j] = t;
+            channels[j].send(data);
+            if (typeof callback === 'function') {
+              callback();
+            }
+          }
+        }
+      }
+    }
+  };
+
+  const propagateTick = function (i, data, computorIndex, tick, callback) {
+    if (computorIndex === udnefined) {
+      const tickView = new DataView(data);
+      computorIndex = tickView[`getUint${TICK_COMPUTOR_INDEX_LENGTH * 8}`](TICK_COMPUTOR_INDEX_OFFSET, true);
+      tick = tickView[`getUint${TICK_TICK_LENGTH * 8}`](TICK_TICK_OFFSET, true);
+    }
+
+    const t = Date.now();
+    if (dejavu.ticksByComputorIndex.has(computorIndex) === false) {
+      dejavu.ticksByComputorIndex.set(computorIndex, new Map());
+    }
+    if (dejavu.ticksByComputorIndex.get(computorIndex).has(tick) === false) {
+      dejavu.ticksByComputorIndex.get(computorIndex).set(tick, Array(NUMBER_OF_CHANNELS).fill(0));
+    }
+
+    dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[i] = t;
+
+    for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
+      if (i !== j) {
+        if (t - dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[j] > MIN_TICK_PROPAGATION_TIMEOUT) {
+
+          if (Math.random() <= TICK_PROPAGATION_PROBABILTY) {
+            if (channels[j]?.readyState === 'open') {
+              dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[j] = t;
+              channels[j].send(data);
+              if (typeof callback === 'function') {
+                callback();
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+
+  const propagateTransaction = function (i, data, callback) {
+    let n = 0;
+    for (let j = 0; j < Math.ceil((TRANSACTION_DEJAVU_BIT_LENGTH / TRANSACTION_DEJAVU_CAPACITY) * Math.log(2)); j++) {
+      const digest = new Uint8Array(8);
+      K12(new Uint8Array(data), digest, 8);
+      const k = Math.ceil((new DataView(digest.buffer).readBigUint64(0, true) * TRANSACTION_DEJAVU_BIT_LENGTH) / MAX_BIG_INT);
+      if ((dejavu.transactions[Math.floor(k / 8)] >>> (k - 8 * Math.floor(k / 8))) & 0x01) {
+        n++;
+      }
+    }
+    if (n === Math.ceil((TRANSACTION_DEJAVU_BIT_LENGTH / TRANSACTION_DEJAVU_CAPACITY) * Math.log(2))) {
+      for (let j = 0; j < Math.ceil((TRANSACTION_DEJAVU_BIT_LENGTH / TRANSACTION_DEJAVU_CAPACITY) * Math.log(2)); j++) {
+        const digest = new Uint8Array(8);
+        K12(new Uint8Array(data), digest, 8);
+        const k = Math.ceil((new DataView(digest.buffer).readBigUint64(0, true) * TRANSACTION_DEJAVU_BIT_LENGTH) / MAX_BIG_INT);
+        dejavu.transactions[Math.floor(k / 8)] |= (0x01 << (k - 8 * Math.floor(k / 8)));
+      }
+      let count = 0;
+      const f = function () {
+        for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
+          if (i !== j) {
+            if (channels[j]?.readyState === 'open') {
+              channels[j].send(data);
+              if (typeof callback === 'function') {
+                callback();
+              }
+            }
+          }
+        }
+        if (++count <= NUMBER_OF_TRANSACTION_REBROADCASTINGS) {
+          setTimeout(f, TRANSACTION_REBROADCAST_TIMEOUT);
+        }
+      };
+      f();
+    }
+  };
 
   return function() {
     const that = this;
@@ -147,7 +290,7 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
           channels[i].close();
           channels[i] = undefined;
         }
-      }
+      };
 
       const closeAndReconnect = function (timeoutDuration) {
         if (state++ > 0) {
@@ -165,7 +308,7 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
           }
           channel(i);
         }, timeoutDuration);
-      }
+      };
 
       socket.addEventListener('message', function (event) {
         const view = new DataView(event.data);
@@ -195,7 +338,6 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                   }, MAX_ROTATING_CHANNEL_DURATION);
                 }
 
-
                 for (const computors of store.computors.values()) {
                   if (dc.readyState === 'open') {
                     dc.send(computors);
@@ -217,12 +359,16 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
               };
 
               dc.onmessage = async function (event) {
+                const dataView = new DataView(event.data);
+                if (dataView[`getUint${PROTOCOL_VERSION_LENGTH * 8}`](PROTOCOL_VERSION_OFFSET, true) !== protocol) {
+                  return;
+                }
+
                 clearTimeout(inactiveChannelTimeout);
                 inactiveChannelTimeout = setTimeout(function () {
                   dc?.close();
                 }, MAX_PERIOD_OF_CHANNEL_INACTIVITY);
 
-                const dataView = new DataView(event.data);
                 const data = new Uint8Array(event.data);
 
                 that.emit('message', data);
@@ -233,18 +379,7 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                       computors: data,
                       channel: i,
                       propagate: function () {
-                        const t = Date.now();
-                        dejavu.computors[i] = t;
-                        for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
-                          if (i !== j) {
-                            if (t - dejavu.computors[j] > MIN_COMPUTORS_PROPAGATION_TIMEOUT) {
-                              if (channels[j]?.readyState === 'open') {
-                                dejavu.computors[j] = t;
-                                channels[j].send(event.data);
-                              }
-                            }
-                          }
-                        }
+                        propagateComputors(i, event.data);
                       },
                       closeAndReconnect: function () {
                         closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
@@ -259,23 +394,7 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                         closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                       },
                       propagate: function (digest) {
-                        const t = Date.now();
-                        if (dejavu.resourceTestSolutionsByDigest.has(digest) === false) {
-                          dejavu.resourceTestSolutionsByDigest.set(digest, Array(NUMBER_OF_CHANNELS).fill(0));
-                        }
-
-                        dejavu.resourceTestSolutionsByDigest.get(digest)[i] = t;
-                        
-                        for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
-                          if (i !== j) {
-                            if (t - dejavu.resourceTestSolutionsByDigest.get(digest)[j] > MIN_RESOURCE_TEST_SOLUTION_PROPAGATION_TIMEOUT) {
-                              if (channels[j]?.readyState === 'open') {
-                                dejavu.resourceTestSolutionsByDigest.get(digest)[j] = t;
-                                channels[j].send(event.data);
-                              }
-                            }
-                          }
-                        }
+                        propagateResourceTestingSolution(i, digest, event.data);
                       }
                     });
                     break;
@@ -287,28 +406,7 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                         closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                       },
                       propagate: function (computorIndex, tick) {
-                        const t = Date.now();
-                        if (dejavu.ticksByComputorIndex.has(computorIndex) === false) {
-                          dejavu.ticksByComputorIndex.set(computorIndex, new Map());
-                        }
-                        if (dejavu.ticksByComputorIndex.get(computorIndex).has(tick) === false) {
-                          dejavu.ticksByComputorIndex.get(computorIndex).set(tick, Array(NUMBER_OF_CHANNELS).fill(0));
-                        }
-
-                        dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[i] = t;
-                        
-                        for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
-                          if (i !== j) {
-                            if (t - dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[j] > MIN_TICK_PROPAGATION_TIMEOUT) {
-                              if (channels[j]?.readyState === 'open') {
-                                if (Math.random() <= TICK_PROPAGATION_PROBABILTY) {
-                                  dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[j] = t;
-                                  channels[j].send(event.data);
-                                }
-                              }
-                            }
-                          }
-                        }
+                       propagateTick(i, event.data, computorIndex, tick);
                       }
                     });
                     break;
@@ -319,9 +417,10 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
                         closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
                       },
                       propagate: function () {
-
+                        propagateTransaction(i, event.data);
                       },
                     })
+                    console.log('Received transaction', data);
                     break;
                   default:
                 }
@@ -445,7 +544,27 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
       }
     }
 
-    const broadcast = function (data) {
+    const broadcast = function (data, callback) {
+      const dataView = new DataView(data.buffer);
+      for (let i = 0; i < NUMBER_OF_CHANNELS; i++) {
+        switch (dataView[`getUint${TYPE_LENGTH * 8}`](TYPE_OFFSET, true)) {
+          case MESSAGE_TYPES.BROADCAST_COMPUTORS:
+            propagateComputors(-1, data.buffer, callback);
+            break;
+          case MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION:
+            propagateComputors(-1, data.buffer, undefined, callback);
+            break;
+          case MESSAGE_TYPES.BROADCAST_TICK:
+            propagateComputors(-1, data.buffer, undefined, undefined, callback);
+            break;
+          case MESSAGE_TYPES.BROADCAST_TRANSACTION:
+            propagateComputors(-1, data.buffer, callback);
+            break;
+        }
+      }
+    };
+
+    const rebroadcast = function (data) {
       for (let i = 0; i < NUMBER_OF_CHANNELS; i++) {
         if (channels[i]?.readyState === 'open') {
           channels[i].send(data.buffer);
@@ -464,6 +583,7 @@ export const gossip = function ({ signalingServers, iceServers, store }) {
       {
         launch,
         broadcast,
+        rebroadcast,
         clearResourceTestSolutionsDejavu,
         shutdown,
       },

@@ -76,6 +76,7 @@ const gateway = function () {
     signalingServers: [PEER_MATCHER],
     iceServers: [ICE_SERVER],
     store,
+    protocol: QUBIC_PROTOCOL,
   });
   network.launch();
 
@@ -179,9 +180,9 @@ const gateway = function () {
         if (transactionView[`getUint${SIZE_LENGTH * 8}`](SIZE_OFFSET, true) === response.byteLength) {
           const { K12, schnorrq } = await crypto;
           const digest = new Uint8Array(crypto.DIGEST_LENGTH);
-          K12(transaction.slice(HEADER_LENGTH, transaction.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
+          K12(response.slice(HEADER_LENGTH, response.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
   
-          if (schnorrq.verify(transaction.slice(HEADER_LENGTH, HEADER_LENGTH + crypto.PUBLIC_KEY_LENGTH), digest, transaction.slice(-crypto.SIGNATURE_LENGTH))) {
+          if (schnorrq.verify(response.slice(HEADER_LENGTH, HEADER_LENGTH + crypto.PUBLIC_KEY_LENGTH), digest, response.slice(-crypto.SIGNATURE_LENGTH))) {
             numberOfOutboundWebRTCRequests += numberOfPeers;
             network.broadcast(response);
 
@@ -191,8 +192,9 @@ const gateway = function () {
         return;
       }
 
-      numberOfOutboundWebRTCRequests += numberOfPeers;
-      network.broadcast(response);
+      network.broadcast(response, function () {
+        numberOfOutboundWebRTCRequests += numberOfPeers;
+      });
     }
 
     let interval;
