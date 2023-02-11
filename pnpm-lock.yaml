@@ -20,11 +20,13 @@ importers:
 
   gateway:
     specifiers:
+      '451': workspace:*
       qubic-converter: workspace:*
       qubic-crypto: workspace:*
       qubic-gossip: workspace:*
       ws: ^8.12.0
     dependencies:
+      '451': link:../451
       qubic-converter: link:../converter
       qubic-crypto: link:../crypto
       qubic-gossip: link:../gossip

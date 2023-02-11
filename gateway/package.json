@@ -13,6 +13,7 @@
     "qubic-crypto": "workspace:*",
     "qubic-gossip": "workspace:*",
     "qubic-converter": "workspace:*",
+    "451": "workspace:*",
     "ws": "^8.12.0"
   }
 }

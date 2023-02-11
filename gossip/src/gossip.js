@@ -359,9 +359,12 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
               };
 
               dc.onmessage = async function (event) {
+                if ((event.data instanceof ArrayBuffer) === false) {
+                  return closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);
+                }
                 const dataView = new DataView(event.data);
                 if (dataView[`getUint${PROTOCOL_VERSION_LENGTH * 8}`](PROTOCOL_VERSION_OFFSET, true) !== protocol) {
-                  return;
+                  return closeAndReconnect(++numbersOfFailingChannelsInARow[i] * CHANNEL_TIMEOUT_MULTIPLIER);;
                 }
 
                 clearTimeout(inactiveChannelTimeout);

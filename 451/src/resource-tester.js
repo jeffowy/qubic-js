@@ -97,6 +97,7 @@ export const resourceTester = function () {
   const parameters = {};
   const miningData = new BigUint64Array(65536);
   const noncesByPublicKey = new Map();
+  const offsetsByPublicKey = new Map();
 
   const resourceTest = async function(resourceTestSolution) {
     const { K12, schnorrq } = await crypto;
@@ -117,8 +118,9 @@ export const resourceTester = function () {
           noncesByPublicKey.set(computorPublicKeyString, new Set());
         }
         
-        let score = 0;
-        for (let i = 0; i < NUMBER_OF_SOLUTION_NONCES; i++) {
+        let score = offsetsByPublicKey.get(computorPublicKeyString)?.score || 0;
+        let i = offsetsByPublicKey.get(computorPublicKeyString)?.offset || 0;
+        for (; i < NUMBER_OF_SOLUTION_NONCES; i++) {
           const nonce = resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_NONCES_OFFSET + i * crypto.NONCE_LENGTH, RESOURCE_TEST_SOLUTION_NONCES_OFFSET + (i + 1) * crypto.NONCE_LENGTH);
           
           if (isZero(nonce) === false) {
@@ -174,7 +176,16 @@ export const resourceTester = function () {
             } else {
               return false;
             }
+          } else {
+            break;
           }
+        }
+
+        if (i > 0) {
+          offsetsByPublicKey.set(computorPublicKeyString, {  
+            offset: i,
+            score,
+          });
         }
 
         console.log(`Score [${computorPublicKeyString}]: ${score}`);
