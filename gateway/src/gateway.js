@@ -58,6 +58,7 @@ import { publicKeyBytesToString } from 'qubic-converter';
 const NUMBER_OF_AVAILABLE_PROCESSORS = process.env.NUMBER_OF_AVAILABLE_PROCESSORS || 3;
 const QUBIC_PORT = process.env.QUBIC_PORT || 21841;
 const QUBIC_PROTOCOL = process.env.QUBIC_PROTOCOL || 89;
+const NUMBER_OF_COMPUTOR_CONNECTIONS = process.env.NUMBER_OF_COMPUTOR_CONNECTIONS || 4;
 const COMPUTORS = (process.env.COMPUTORS || '0.0.0.0').split(',').map(s => s.trim());
 const COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER = 1000;
 const NUMBER_OF_EXCHANGED_PEERS = 4;
@@ -253,7 +254,9 @@ const gateway = function () {
     });
   }
 
-  computorConnection();
+  for (let i = 0; i < NUMBER_OF_COMPUTOR_CONNECTIONS; i++) {
+    computorConnection();
+  }
 };
 
 if (cluster.isPrimary) {
