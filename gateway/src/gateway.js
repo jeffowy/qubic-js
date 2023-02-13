@@ -82,6 +82,7 @@ const SEED_H = process.env.SEED_H || 101;
 
 MESSAGE_TYPES.EXCHANGE_PUBLIC_PEERS = 0;
 MESSAGE_TYPES.REQUEST_COMPUTORS = 11;
+MESSAGE_TYPES.REQUEST_QUORUM_TICK = 14;
 
 const gateway = function () {
   const store = {
@@ -198,6 +199,16 @@ const gateway = function () {
       socket.write(computorsRequest);
     }
 
+    const requestQuorumTick = function () {
+      const quorumTickRequest = Buffer.alloc(HEADER_LENGTH + 4 + NUMBER_OF_COMPUTORS / 4, 0);
+      quorumTickRequest[`writeUint${SIZE_LENGTH * 8}LE`](quorumTickRequest.byteLength, SIZE_OFFSET);
+      quorumTickRequest[`writeUint${PROTOCOL_VERSION_LENGTH * 8}LE`](QUBIC_PROTOCOL, PROTOCOL_VERSION_OFFSET);
+      quorumTickRequest[`writeUint${TYPE_LENGTH * 8}LE`](MESSAGE_TYPES.REQUEST_QUORUM_TICK, TYPE_OFFSET);
+      quorumTickRequest[`writeUint${4 * 8}LE`](4900499, TYPE_OFFSET + TYPE_LENGTH);
+      socket.write(quorumTickRequest);
+    }
+
+
     const onTransaction = async function ({ transaction, closeAndReconnect }) {
       const transactionView = new DataView(transaction.buffer);
       if (transactionView[`getUint${SIZE_LENGTH * 8}`](SIZE_OFFSET, true) === transaction.byteLength) {
@@ -281,6 +292,7 @@ const gateway = function () {
         const computorIndex = message[`readUint${TICK_COMPUTOR_INDEX_LENGTH * 8}LE`](TICK_COMPUTOR_INDEX_OFFSET);
         if (system.computors[computorIndex] !== undefined) {
           if (schnorrq.verify(system.computors[computorIndex], digest, message.slice(TICK_SIGNATURE_OFSSET, TICK_SIGNATURE_OFSSET + crypto.SIGNATURE_LENGTH)) === 1) {
+            console.log('TICK')
             network.broadcast(message, function () {
               numberOfOutboundWebRTCRequests++;
             });
@@ -322,7 +334,10 @@ const gateway = function () {
       interval = setInterval(function () {
         numberOfOutboundComputorRequests++;
         requestComputors();
-      }, 5000);
+        setTimeout(function () {
+          requestQuorumTick();
+        }, 1000);
+      }, 15 * 1000);
     });
     
     socket.on('error', function () {});
@@ -338,7 +353,7 @@ const gateway = function () {
             byteOffset2 = data.length;
             extraBytesFlag = true;
           } else {
-            const response = data.subarray(byteOffset2, byteOffset2 + data[`readUint${SIZE_LENGTH * 8}LE`](byteOffset2 + SIZE_OFFSET))
+            const response = data.slice(byteOffset2, byteOffset2 + data[`readUint${SIZE_LENGTH * 8}LE`](byteOffset2 + SIZE_OFFSET))
             messageProcessor(response);
             byteOffset2 += response.length;
           }

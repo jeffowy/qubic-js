@@ -99,7 +99,7 @@ export const TICK_TICK_LENGTH = 4;
 const MIN_COMPUTORS_PROPAGATION_TIMEOUT = 30 * 1000;
 const MIN_RESOURCE_TEST_SOLUTION_PROPAGATION_TIMEOUT = 30 * 1000;
 const MIN_TICK_PROPAGATION_TIMEOUT = 3 * 1000;
-const TICK_PROPAGATION_PROBABILTY = 2 / 3;
+const TICK_PROPAGATION_PROBABILTY = 1;
 
 const MAX_BIG_INT = 2n ** 64n - 1n;
 const TRANSACTION_DEJAVU_FALSE_POSITIVE_PROBABILITY = 0.1;
@@ -469,21 +469,23 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
             };
 
             pc.onnegotiationneeded = function () {
-              // Caller issues SDP offer
-              pc
-                .createOffer()
-                .then(function (offer) { 
-                  return pc?.setLocalDescription(offer)
-                })
-                .then(function () {
-                  const payload = new TextEncoder().encode(JSON.stringify(pc.localDescription))
-                  const signal = new Uint8Array(1 + payload.length);
-                  const signalView = new DataView(signal.buffer);
-                  signal.set(payload, 1);
-                  signalView.setUint8(0, SIGNAL_TYPES.SESSION_DESCRIPTION, true);
-                  socket.send(signal);
-                })
-                .catch(console.log);
+              if (pc !== undefined) {
+                // Caller issues SDP offer
+                pc
+                  .createOffer()
+                  .then(function (offer) {
+                    return pc?.setLocalDescription(offer)
+                  })
+                  .then(function () {
+                    const payload = new TextEncoder().encode(JSON.stringify(pc.localDescription))
+                    const signal = new Uint8Array(1 + payload.length);
+                    const signalView = new DataView(signal.buffer);
+                    signal.set(payload, 1);
+                    signalView.setUint8(0, SIGNAL_TYPES.SESSION_DESCRIPTION, true);
+                    socket.send(signal);
+                  })
+                  .catch(console.log);
+              }
             };
 
             if (role === 1) {
