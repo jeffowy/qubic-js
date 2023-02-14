@@ -338,8 +338,10 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                   }, MAX_ROTATING_CHANNEL_DURATION);
                 }
 
-                if (dc.readyState === 'open') {
-                  dc.send(store.computors.buffer);
+                if (store.computors !== undefined) {
+                  if (dc.readyState === 'open') {
+                    dc.send(store.computors.buffer);
+                  }
                 }
 
                 for (const resourceTestSolution of store.resourceTestSolutions.values()) {

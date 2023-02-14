@@ -86,7 +86,6 @@ MESSAGE_TYPES.REQUEST_QUORUM_TICK = 14;
 
 const gateway = function () {
   const store = {
-    computors: new Set(),
     resourceTestSolutions: new Map(),
     ticks: Array(676),
   };
