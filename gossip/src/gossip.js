@@ -198,7 +198,6 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
     for (let j = 0; j < NUMBER_OF_CHANNELS; j++) {
       if (i !== j) {
         if (t - dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[j] > MIN_TICK_PROPAGATION_TIMEOUT) {
-
           if (Math.random() <= TICK_PROPAGATION_PROBABILTY) {
             if (channels[j]?.readyState === 'open') {
               dejavu.ticksByComputorIndex.get(computorIndex).get(tick)[j] = t;
@@ -262,12 +261,14 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
   
       let closeAndReconnectTimeout;
       let inactiveChannelTimeout;
+      let rotationTimeout;
       let connectionAttemptTimeout = setTimeout(function () {
         if (state++ > 0) {
           return;
         }
         clearTimeout(closeAndReconnectTimeout);
         clearTimeout(inactiveChannelTimeout);
+        clearTimeout(rotationTimeout);
         socket.close();
         pc?.close();
         pc = undefined;
@@ -283,6 +284,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
         clearTimeout(closeAndReconnectTimeout);
         clearTimeout(connectionAttemptTimeout);
         clearTimeout(inactiveChannelTimeout);
+        clearTimeout(rotationTimeout);
         socket.close();
         pc?.close();
         pc = undefined;
@@ -299,6 +301,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
         closeAndReconnectTimeout = setTimeout(function () {
           clearTimeout(connectionAttemptTimeout);
           clearTimeout(inactiveChannelTimeout);
+          clearTimeout(rotationTimeout);
           socket.close();
           pc?.close();
           pc = undefined;
@@ -333,7 +336,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                   dc?.close();
                 }, MAX_PERIOD_OF_CHANNEL_INACTIVITY);
                 if (i === NUMBER_OF_CHANNELS - 1) {
-                  setTimeout(function () {
+                  rotationTimeout = setTimeout(function () {
                     dc?.close();
                   }, MAX_ROTATING_CHANNEL_DURATION);
                 }
@@ -346,13 +349,15 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
 
                 for (const resourceTestSolution of store.resourceTestSolutions.values()) {
                   if (dc.readyState === 'open') {
-                    dc.send(resourceTestSolution);
+                    //dc.send(resourceTestSolution);
                   }
                 }
 
                 for (const tick of store.ticks) {
-                  if (dc.readyState === 'open') {
-                    dc.send(tick);
+                  if (tick !== undefined) {
+                    if (dc.readyState === 'open') {
+                     dc.send(tick.buffer);
+                    }
                   }
                 }
               };

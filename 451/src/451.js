@@ -131,7 +131,7 @@ const _451 = function ({
     };
 
     const store = {
-      computors: new Set(),
+      computors: undefined,
       resourceTestSolutions: new Map(),
       ticks: Array(QUORUM),
     };

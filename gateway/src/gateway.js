@@ -87,7 +87,7 @@ MESSAGE_TYPES.REQUEST_QUORUM_TICK = 14;
 const gateway = function () {
   const store = {
     resourceTestSolutions: new Map(),
-    ticks: Array(676),
+    ticks: Array(NUMBER_OF_COMPUTORS),
   };
   const network = gossip({
     signalingServers: [PEER_MATCHER],
@@ -204,7 +204,7 @@ const gateway = function () {
       quorumTickRequest[`writeUint${SIZE_LENGTH * 8}LE`](quorumTickRequest.byteLength, SIZE_OFFSET);
       quorumTickRequest[`writeUint${PROTOCOL_VERSION_LENGTH * 8}LE`](QUBIC_PROTOCOL, PROTOCOL_VERSION_OFFSET);
       quorumTickRequest[`writeUint${TYPE_LENGTH * 8}LE`](MESSAGE_TYPES.REQUEST_QUORUM_TICK, TYPE_OFFSET);
-      quorumTickRequest[`writeUint${4 * 8}LE`](4900499, TYPE_OFFSET + TYPE_LENGTH);
+      quorumTickRequest[`writeUint${4 * 8}LE`](4910040, TYPE_OFFSET + TYPE_LENGTH);
       socket.write(quorumTickRequest);
     }
 
@@ -226,6 +226,14 @@ const gateway = function () {
     }
 
     network.addListener('transaction', onTransaction);
+
+    function toUint8Array(buffer) {
+      const arr = new Uint8Array(buffer.length);
+      for (let i = 0; i < buffer.length; ++i) {
+        arr[i] = buffer[i];
+      }
+      return arr;
+    }
 
     const messageProcessor = async function (message) {
       numberOfInboundComputorRequests++;
@@ -259,8 +267,8 @@ const gateway = function () {
           for (let i = 0; i < NUMBER_OF_COMPUTORS; i++) {
             system.computors[i] = message.slice(COMPUTORS_PUBLIC_KEYS_OFFSET + (i * crypto.PUBLIC_KEY_LENGTH), COMPUTORS_PUBLIC_KEYS_OFFSET + ((i + 1) * crypto.PUBLIC_KEY_LENGTH));
           }
-          store.computors = message;
-          network.broadcast(message, function () {
+          store.computors = toUint8Array(message);
+          network.broadcast(toUint8Array(message), function () {
             numberOfOutboundWebRTCRequests++;
           });
         } else {
@@ -273,7 +281,7 @@ const gateway = function () {
       if (message[`readUint${TYPE_LENGTH * 8}LE`](TYPE_OFFSET) === MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION) {
         const result = await resourceTest(message);
         if (result !== false) {
-          network.broadcast(message, function () {
+          network.broadcast(toUint8Array(message), function () {
             numberOfOutboundWebRTCRequests++;
           });
         } else {
@@ -293,8 +301,8 @@ const gateway = function () {
         const computorIndex = message[`readUint${TICK_COMPUTOR_INDEX_LENGTH * 8}LE`](TICK_COMPUTOR_INDEX_OFFSET);
         if (system.computors[computorIndex] !== undefined) {
           if (schnorrq.verify(system.computors[computorIndex], digest, message.slice(message.length - crypto.SIGNATURE_LENGTH, message.length)) === 1) {
-            store.ticks[computorIndex] = message;
-            network.broadcast(message, function () {
+            store.ticks[computorIndex] = toUint8Array(message);
+            network.broadcast(toUint8Array(message), function () {
               numberOfOutboundWebRTCRequests++;
             });
           } else {
@@ -311,7 +319,7 @@ const gateway = function () {
         K12(message.slice(HEADER_LENGTH, message.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
 
         if (schnorrq.verify(message.slice(HEADER_LENGTH, HEADER_LENGTH + crypto.PUBLIC_KEY_LENGTH), digest, message.slice(-crypto.SIGNATURE_LENGTH))) {
-          network.broadcast(message, function () {
+          network.broadcast(toUint8Array(message), function () {
             numberOfOutboundWebRTCRequests++;
           });
 
@@ -322,9 +330,9 @@ const gateway = function () {
         return;
       }
 
-      network.broadcast(message, function () {
-        numberOfOutboundWebRTCRequests++;
-      });
+      // network.broadcast(message, function () {
+      //   numberOfOutboundWebRTCRequests++;
+      // });
     }
 
     let interval;
