@@ -339,7 +339,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                 }
 
                 if (dc.readyState === 'open') {
-                  dc.send(store.computors);
+                  dc.send(store.computors.buffer);
                 }
 
                 for (const resourceTestSolution of store.resourceTestSolutions.values()) {
