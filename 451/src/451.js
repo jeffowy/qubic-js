@@ -189,6 +189,7 @@ const _451 = function ({
               system.epoch = result.epoch;
               for (let i = 0; i < NUMBER_OF_COMPUTORS; i++) {
                 system.computors[i] = computors.slice(COMPUTORS_PUBLIC_KEYS_OFFSET + (i * crypto.PUBLIC_KEY_LENGTH), COMPUTORS_PUBLIC_KEYS_OFFSET + ((i + 1) * crypto.PUBLIC_KEY_LENGTH));
+                store.computors = computors;
               }
             }
 
@@ -236,14 +237,14 @@ const _451 = function ({
           const { K12, schnorrq } = await crypto;
           const digest = new Uint8Array(crypto.DIGEST_LENGTH);
           tickView.setUint8(TICK_COMPUTOR_INDEX_OFFSET, tickView.getUint8(TICK_COMPUTOR_INDEX_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_TICK, true);
-          K12(tick.slice(TICK_COMPUTOR_INDEX_OFFSET, message.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
+          K12(tick.slice(TICK_COMPUTOR_INDEX_OFFSET, tick.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
           tickView.setUint8(TICK_COMPUTOR_INDEX_OFFSET, tickView.getUint8(TICK_COMPUTOR_INDEX_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_TICK, true);
   
           console.log('RECEIVED TICK');
   
           const computorIndex = tickView[`getUint${TICK_COMPUTOR_INDEX_LENGTH * 8}`](TICK_COMPUTOR_INDEX_OFFSET, true);
 
-          if (schnorrq.verify(system.computors[computorIndex], digest, tick.slice(message.length - crypto.SIGNATURE_LENGTH, message.length)) === 1) {
+          if (schnorrq.verify(system.computors[computorIndex], digest, tick.slice(tick.length - crypto.SIGNATURE_LENGTH, tick.length)) === 1) {
             propagate(computorIndex, receivedTick);
 
             if (system.ticks.has(receivedTick) === false) {

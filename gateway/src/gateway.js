@@ -88,6 +88,7 @@ const gateway = function () {
   const store = {
     computors: new Set(),
     resourceTestSolutions: new Map(),
+    ticks: Array(676),
   };
   const network = gossip({
     signalingServers: [PEER_MATCHER],
@@ -259,6 +260,7 @@ const gateway = function () {
           for (let i = 0; i < NUMBER_OF_COMPUTORS; i++) {
             system.computors[i] = message.slice(COMPUTORS_PUBLIC_KEYS_OFFSET + (i * crypto.PUBLIC_KEY_LENGTH), COMPUTORS_PUBLIC_KEYS_OFFSET + ((i + 1) * crypto.PUBLIC_KEY_LENGTH));
           }
+          store.computors = message;
           network.broadcast(message, function () {
             numberOfOutboundWebRTCRequests++;
           });
@@ -292,6 +294,7 @@ const gateway = function () {
         const computorIndex = message[`readUint${TICK_COMPUTOR_INDEX_LENGTH * 8}LE`](TICK_COMPUTOR_INDEX_OFFSET);
         if (system.computors[computorIndex] !== undefined) {
           if (schnorrq.verify(system.computors[computorIndex], digest, message.slice(message.length - crypto.SIGNATURE_LENGTH, message.length)) === 1) {
+            store.ticks[computorIndex] = message;
             network.broadcast(message, function () {
               numberOfOutboundWebRTCRequests++;
             });

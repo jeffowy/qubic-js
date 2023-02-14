@@ -151,7 +151,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
       const digestBytes = new Uint8Array(crypto.DIGEST_LENGTH);
       const { K12 } = await crypto;
       resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
-      K12(resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, RESOURCE_TEST_SOLUTION_SIGNATURE_OFFSET), digest, crypto.DIGEST_LENGTH);
+      K12(resourceTestSolution.slice(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolution.length - crypto.SIGNATURE_LENGTH), digestBytes, crypto.DIGEST_LENGTH);
       resourceTestSolutionView.setUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, resourceTestSolutionView.getUint8(RESOURCE_TEST_SOLUTION_COMPUTOR_PUBLIC_KEY_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION, true);
       digest = digestBytesToString(digestBytes);
     }
@@ -338,10 +338,8 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                   }, MAX_ROTATING_CHANNEL_DURATION);
                 }
 
-                for (const computors of store.computors.values()) {
-                  if (dc.readyState === 'open') {
-                    dc.send(computors);
-                  }
+                if (dc.readyState === 'open') {
+                  dc.send(store.computors);
                 }
 
                 for (const resourceTestSolution of store.resourceTestSolutions.values()) {
@@ -563,13 +561,13 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
             propagateComputors(-1, data.buffer, callback);
             break;
           case MESSAGE_TYPES.BROADCAST_RESOURCE_TEST_SOLUTION:
-            propagateComputors(-1, data.buffer, undefined, callback);
+            propagateResourceTestingSolution(-1, data.buffer, undefined, callback);
             break;
           case MESSAGE_TYPES.BROADCAST_TICK:
-            propagateComputors(-1, data.buffer, undefined, undefined, callback);
+            propagateTick(-1, data.buffer, undefined, undefined, callback);
             break;
           case MESSAGE_TYPES.BROADCAST_TRANSACTION:
-            propagateComputors(-1, data.buffer, callback);
+            propagateTransaction(-1, data.buffer, callback);
             break;
         }
       }
