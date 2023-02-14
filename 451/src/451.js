@@ -133,6 +133,7 @@ const _451 = function ({
     const store = {
       computors: new Set(),
       resourceTestSolutions: new Map(),
+      ticks: Array(QUORUM),
     };
 
     const { resourceTest, setResourceTestParameters } = resourceTester();
@@ -231,20 +232,19 @@ const _451 = function ({
       if (system.epoch > 0) {
         const tickView = new DataView(tick.buffer);
         const receivedTick = tickView[`getUint${TICK_TICK_LENGTH * 8}`](TICK_TICK_OFFSET, true);
-
-        if (receivedTick > system.tick && system.epoch === tickView[`getUint${TICK_EPOCH_LENGTH}`](TICK_EPOCH_OFFSET, true)) {
-          console.log('Received tick:', receivedTick);
-
+        if (receivedTick > system.tick && system.epoch === tickView[`getUint${TICK_EPOCH_LENGTH * 8}`](TICK_EPOCH_OFFSET, true)) {
           const { K12, schnorrq } = await crypto;
           const digest = new Uint8Array(crypto.DIGEST_LENGTH);
           tickView.setUint8(TICK_COMPUTOR_INDEX_OFFSET, tickView.getUint8(TICK_COMPUTOR_INDEX_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_TICK, true);
-          K12(tick.slice(TICK_COMPUTOR_INDEX_OFFSET, TICK_SIGNATURE_OFSSET), digest, crypto.DIGEST_LENGTH);
+          K12(tick.slice(TICK_COMPUTOR_INDEX_OFFSET, message.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
           tickView.setUint8(TICK_COMPUTOR_INDEX_OFFSET, tickView.getUint8(TICK_COMPUTOR_INDEX_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_TICK, true);
-
+  
+          console.log('RECEIVED TICK');
+  
           const computorIndex = tickView[`getUint${TICK_COMPUTOR_INDEX_LENGTH * 8}`](TICK_COMPUTOR_INDEX_OFFSET, true);
 
-          if (schnorrq.verify(system.computors[computorIndex], digest, tick.slice(TICK_SIGNATURE_OFSSET, TICK_SIGNATURE_OFSSET + crypto.SIGNATURE_LENGTH)) === 1) {
-            propagate(computorIndex, receivedTick)
+          if (schnorrq.verify(system.computors[computorIndex], digest, tick.slice(message.length - crypto.SIGNATURE_LENGTH, message.length)) === 1) {
+            propagate(computorIndex, receivedTick);
 
             if (system.ticks.has(receivedTick) === false) {
               system.ticks.set(receivedTick, new Array(NUMBER_OF_COMPUTORS));
@@ -266,35 +266,41 @@ const _451 = function ({
                 digestOfTransactions: digestBytesToString(tick.slice(TICK_DIGEST_OF_TRANSACTIONS_OFFSET, TICK_DIGEST_OF_TRANSACTIONS_OFFSET + crypto.DIGEST_LENGTH)),
               };
 
-              let numberOfAlignedTicks = 1;
-              for (let i = 0; i < NUMBER_OF_COMPUTORS; i++) {
-                if (computorIndex !== i && ticks[i] !== undefined) {
-                  if (
-                    ticks[computorIndex].initSpectrumDigest === ticks[i].initSpectrumDigest &&
-                    ticks[computorIndex].initUniverseDigest === ticks[i].initUniverseDigest &&
-                    ticks[computorIndex].initComputerDigest === ticks[i].initComputerDigest &&
-                    ticks[computorIndex].prevSpectrumDigest === ticks[i].prevSpectrumDigest &&
-                    ticks[computorIndex].prevUniverseDigest === ticks[i].prevUniverseDigest &&
-                    ticks[computorIndex].prevComputerDigest === ticks[i].prevComputerDigest &&
-                    ticks[computorIndex].saltedSpectrumDigest === ticks[i].saltedSpectrumDigest &&
-                    ticks[computorIndex].saltedUniverseDigest === ticks[i].saltedUniverseDigest &&
-                    ticks[computorIndex].saltedComputerDigest === ticks[i].saltedComputerDigest &&
-                    ticks[computorIndex].digestOfTransactions === ticks[i].digestOfTransactions
-                  ) {
-                    if (numberOfAlignedTicks >= QUORUM) {
-                      if (system.tick < receivedTick) {
-                        system.tick = receivedTick;
-                        system.ticks.delete(receivedTick);
-                        system.digestsOfTransactionsByTick.set(receivedTick, ticks[computorIndex].digestOfTransactions);
+              if (system.ticks.get(receivedTick).filter((tick) => tick !== undefined).length >= QUORUM) {
+                const alignedTicks = [tick];
+                for (let i = 0; i < NUMBER_OF_COMPUTORS; i++) {
+                  if (computorIndex !== i) {
+                    if (
+                      ticks[i] !== undefined &&
+                      ticks[computorIndex].initSpectrumDigest === ticks[i].initSpectrumDigest &&
+                      ticks[computorIndex].initUniverseDigest === ticks[i].initUniverseDigest &&
+                      ticks[computorIndex].initComputerDigest === ticks[i].initComputerDigest &&
+                      ticks[computorIndex].prevSpectrumDigest === ticks[i].prevSpectrumDigest &&
+                      ticks[computorIndex].prevUniverseDigest === ticks[i].prevUniverseDigest &&
+                      ticks[computorIndex].prevComputerDigest === ticks[i].prevComputerDigest &&
+                      ticks[computorIndex].saltedSpectrumDigest === ticks[i].saltedSpectrumDigest &&
+                      ticks[computorIndex].saltedUniverseDigest === ticks[i].saltedUniverseDigest &&
+                      ticks[computorIndex].saltedComputerDigest === ticks[i].saltedComputerDigest &&
+                      ticks[computorIndex].digestOfTransactions === ticks[i].digestOfTransactions
+                    ) {
+                      alignedTicks.push(ticks[i].tick);
 
-                        that.emit('tick', ticks[computorIndex]);
+                      if (alignedTicks.length >= QUORUM) {
+                        if (system.tick < receivedTick) {
+                          system.tick = receivedTick;
+                          system.ticks.delete(receivedTick);
+                          system.digestsOfTransactionsByTick.set(receivedTick, ticks[computorIndex].digestOfTransactions);
+
+                          store.ticks = alignedTicks;
+
+                          that.emit('tick', ticks[computorIndex]);
+                        }
+                        break;
                       }
-                      break;
                     }
                   }
                 }
               }
-              console.log('Number of aligned ticks:', numberOfAlignedTicks);
             }
           } else {
             closeAndReconnect();

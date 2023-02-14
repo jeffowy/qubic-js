@@ -179,7 +179,7 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
   };
 
   const propagateTick = function (i, data, computorIndex, tick, callback) {
-    if (computorIndex === udnefined) {
+    if (computorIndex === undefined) {
       const tickView = new DataView(data);
       computorIndex = tickView[`getUint${TICK_COMPUTOR_INDEX_LENGTH * 8}`](TICK_COMPUTOR_INDEX_OFFSET, true);
       tick = tickView[`getUint${TICK_TICK_LENGTH * 8}`](TICK_TICK_OFFSET, true);
@@ -347,6 +347,12 @@ export const gossip = function ({ signalingServers, iceServers, store, protocol 
                 for (const resourceTestSolution of store.resourceTestSolutions.values()) {
                   if (dc.readyState === 'open') {
                     dc.send(resourceTestSolution);
+                  }
+                }
+
+                for (const tick of store.ticks) {
+                  if (dc.readyState === 'open') {
+                    dc.send(tick);
                   }
                 }
               };

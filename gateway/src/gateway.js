@@ -54,7 +54,7 @@ import net from 'node:net';
 import crypto from 'qubic-crypto';
 import { gossip, MESSAGE_TYPES, SIZE_OFFSET, SIZE_LENGTH, PROTOCOL_VERSION_OFFSET, PROTOCOL_VERSION_LENGTH, TYPE_OFFSET, TYPE_LENGTH, HEADER_LENGTH, NUMBER_OF_CHANNELS, TICK_COMPUTOR_INDEX_LENGTH, TICK_COMPUTOR_INDEX_OFFSET } from 'qubic-gossip';
 import { publicKeyBytesToString, publicKeyStringToBytes } from 'qubic-converter';
-import { resourceTester, NUMBER_OF_COMPUTORS, COMPUTORS_PUBLIC_KEYS_OFFSET, TICK_SIGNATURE_OFSSET } from '451';
+import { resourceTester, NUMBER_OF_COMPUTORS, COMPUTORS_PUBLIC_KEYS_OFFSET } from '451';
 
 const NUMBER_OF_AVAILABLE_PROCESSORS = process.env.NUMBER_OF_AVAILABLE_PROCESSORS || 3;
 const QUBIC_PORT = process.env.QUBIC_PORT || 21841;
@@ -286,13 +286,12 @@ const gateway = function () {
         const { K12, schnorrq } = await crypto;
         const digest = new Uint8Array(crypto.DIGEST_LENGTH);
         message.writeUint8(message.readUint8(TICK_COMPUTOR_INDEX_OFFSET) ^ MESSAGE_TYPES.BROADCAST_TICK, TICK_COMPUTOR_INDEX_OFFSET);
-        K12(message.slice(TICK_COMPUTOR_INDEX_OFFSET, TICK_SIGNATURE_OFSSET), digest, crypto.DIGEST_LENGTH);
+        K12(message.slice(TICK_COMPUTOR_INDEX_OFFSET, message.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
         message.writeUint8(message.readUint8(TICK_COMPUTOR_INDEX_OFFSET) ^ MESSAGE_TYPES.BROADCAST_TICK, TICK_COMPUTOR_INDEX_OFFSET);
 
         const computorIndex = message[`readUint${TICK_COMPUTOR_INDEX_LENGTH * 8}LE`](TICK_COMPUTOR_INDEX_OFFSET);
         if (system.computors[computorIndex] !== undefined) {
-          if (schnorrq.verify(system.computors[computorIndex], digest, message.slice(TICK_SIGNATURE_OFSSET, TICK_SIGNATURE_OFSSET + crypto.SIGNATURE_LENGTH)) === 1) {
-            console.log('TICK')
+          if (schnorrq.verify(system.computors[computorIndex], digest, message.slice(message.length - crypto.SIGNATURE_LENGTH, message.length)) === 1) {
             network.broadcast(message, function () {
               numberOfOutboundWebRTCRequests++;
             });
