@@ -72,7 +72,8 @@ export const COMPUTORS_PUBLIC_KEYS_OFFSET = COMPUTORS_EPOCH_OFFSET + COMPUTORS_E
 const COMPUTORS_PUBLIC_KEYS_LENGTH = crypto.PUBLIC_KEY_LENGTH * NUMBER_OF_COMPUTORS;
 const COMPUTORS_SIGNATURE_OFFSET = COMPUTORS_PUBLIC_KEYS_OFFSET + COMPUTORS_PUBLIC_KEYS_LENGTH;
 
-const TICK_INIT_SPECTRUM_DIGEST_OFFSET = TICK_TICK_OFFSET + TICK_TICK_LENGTH;
+
+const TICK_INIT_SPECTRUM_DIGEST_OFFSET = TICK_TICK_OFFSET + TICK_TICK_LENGTH + 2 + 6;
 const TICK_INIT_UNIVERSE_DIGEST_OFFSET = TICK_INIT_SPECTRUM_DIGEST_OFFSET + crypto.DIGEST_LENGTH;
 const TICK_INIT_COMPUTER_DIGEST_OFFSET = TICK_INIT_UNIVERSE_DIGEST_OFFSET + crypto.DIGEST_LENGTH;
 const TICK_PREV_SPECTRUM_DIGEST_OFFSET = TICK_INIT_COMPUTER_DIGEST_OFFSET + crypto.DIGEST_LENGTH;
@@ -239,9 +240,6 @@ const _451 = function ({
           tickView.setUint8(TICK_COMPUTOR_INDEX_OFFSET, tickView.getUint8(TICK_COMPUTOR_INDEX_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_TICK, true);
           K12(tick.slice(TICK_COMPUTOR_INDEX_OFFSET, tick.length - crypto.SIGNATURE_LENGTH), digest, crypto.DIGEST_LENGTH);
           tickView.setUint8(TICK_COMPUTOR_INDEX_OFFSET, tickView.getUint8(TICK_COMPUTOR_INDEX_OFFSET, true) ^ MESSAGE_TYPES.BROADCAST_TICK, true);
-  
-          console.log('RECEIVED TICK');
-  
           const computorIndex = tickView[`getUint${TICK_COMPUTOR_INDEX_LENGTH * 8}`](TICK_COMPUTOR_INDEX_OFFSET, true);
 
           if (schnorrq.verify(system.computors[computorIndex], digest, tick.slice(tick.length - crypto.SIGNATURE_LENGTH, tick.length)) === 1) {
@@ -254,19 +252,16 @@ const _451 = function ({
             if ((system.ticks.get(receivedTick)[computorIndex]?.tick || 0) < receivedTick) {
               const ticks = system.ticks.get(receivedTick);
               ticks[computorIndex] = {
-                tick,
+                tick: receivedTick,
+                bytes: tick,
                 initSpectrumDigest: digestBytesToString(tick.slice(TICK_INIT_SPECTRUM_DIGEST_OFFSET, TICK_INIT_SPECTRUM_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
                 initUniverseDigest: digestBytesToString(tick.slice(TICK_INIT_UNIVERSE_DIGEST_OFFSET, TICK_INIT_UNIVERSE_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
                 initComputerDigest: digestBytesToString(tick.slice(TICK_INIT_COMPUTER_DIGEST_OFFSET, TICK_INIT_COMPUTER_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
                 prevSpectrumDigest: digestBytesToString(tick.slice(TICK_PREV_SPECTRUM_DIGEST_OFFSET, TICK_PREV_SPECTRUM_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
                 prevUniverseDigest: digestBytesToString(tick.slice(TICK_PREV_UNIVERSE_DIGEST_OFFSET, TICK_PREV_UNIVERSE_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
                 prevComputerDigest: digestBytesToString(tick.slice(TICK_PREV_COMPUTER_DIGEST_OFFSET, TICK_PREV_COMPUTER_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
-                saltedSpectrumDigest: digestBytesToString(tick.slice(TICK_SALTED_SPECTRUM_DIGEST_OFFSET, TICK_SALTED_SPECTRUM_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
-                saltedUniverseDigest: digestBytesToString(tick.slice(TICK_SALTED_UNIVERSE_DIGEST_OFFSET, TICK_SALTED_UNIVERSE_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
-                saltedComputerDigest: digestBytesToString(tick.slice(TICK_SALTED_COMPUTER_DIGEST_OFFSET, TICK_SALTED_COMPUTER_DIGEST_OFFSET + crypto.DIGEST_LENGTH)),
                 digestOfTransactions: digestBytesToString(tick.slice(TICK_DIGEST_OF_TRANSACTIONS_OFFSET, TICK_DIGEST_OF_TRANSACTIONS_OFFSET + crypto.DIGEST_LENGTH)),
               };
-
               if (system.ticks.get(receivedTick).filter((tick) => tick !== undefined).length >= QUORUM) {
                 const alignedTicks = [tick];
                 for (let i = 0; i < NUMBER_OF_COMPUTORS; i++) {
@@ -279,12 +274,10 @@ const _451 = function ({
                       ticks[computorIndex].prevSpectrumDigest === ticks[i].prevSpectrumDigest &&
                       ticks[computorIndex].prevUniverseDigest === ticks[i].prevUniverseDigest &&
                       ticks[computorIndex].prevComputerDigest === ticks[i].prevComputerDigest &&
-                      ticks[computorIndex].saltedSpectrumDigest === ticks[i].saltedSpectrumDigest &&
-                      ticks[computorIndex].saltedUniverseDigest === ticks[i].saltedUniverseDigest &&
-                      ticks[computorIndex].saltedComputerDigest === ticks[i].saltedComputerDigest &&
                       ticks[computorIndex].digestOfTransactions === ticks[i].digestOfTransactions
                     ) {
-                      alignedTicks.push(ticks[i].tick);
+                      console.log(ticks[computorIndex].digestOfTransactions, ticks[i].digestOfTransactions);
+                      alignedTicks.push(ticks[i].bytes);
 
                       if (alignedTicks.length >= QUORUM) {
                         if (system.tick < receivedTick) {

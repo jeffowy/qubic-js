@@ -52,13 +52,13 @@ import process from 'node:process';
 import cluster from 'node:cluster';
 import net from 'node:net';
 import crypto from 'qubic-crypto';
-import { gossip, MESSAGE_TYPES, SIZE_OFFSET, SIZE_LENGTH, PROTOCOL_VERSION_OFFSET, PROTOCOL_VERSION_LENGTH, TYPE_OFFSET, TYPE_LENGTH, HEADER_LENGTH, NUMBER_OF_CHANNELS, TICK_COMPUTOR_INDEX_LENGTH, TICK_COMPUTOR_INDEX_OFFSET } from 'qubic-gossip';
+import { gossip, MESSAGE_TYPES, SIZE_OFFSET, SIZE_LENGTH, PROTOCOL_VERSION_OFFSET, PROTOCOL_VERSION_LENGTH, TYPE_OFFSET, TYPE_LENGTH, HEADER_LENGTH, NUMBER_OF_CHANNELS, TICK_COMPUTOR_INDEX_LENGTH, TICK_COMPUTOR_INDEX_OFFSET, TICK_TICK_LENGTH, TICK_TICK_OFFSET } from 'qubic-gossip';
 import { publicKeyBytesToString, publicKeyStringToBytes } from 'qubic-converter';
 import { resourceTester, NUMBER_OF_COMPUTORS, COMPUTORS_PUBLIC_KEYS_OFFSET } from '451';
 
 const NUMBER_OF_AVAILABLE_PROCESSORS = process.env.NUMBER_OF_AVAILABLE_PROCESSORS || 3;
 const QUBIC_PORT = process.env.QUBIC_PORT || 21841;
-const QUBIC_PROTOCOL = process.env.QUBIC_PROTOCOL || 89;
+const QUBIC_PROTOCOL = process.env.QUBIC_PROTOCOL || 90;
 const NUMBER_OF_COMPUTOR_CONNECTIONS = process.env.NUMBER_OF_COMPUTOR_CONNECTIONS || 4;
 const COMPUTORS = (process.env.COMPUTORS || '0.0.0.0').split(',').map(s => s.trim());
 const COMPUTOR_CONNECTION_TIMEOUT_MULTIPLIER = 1000;
@@ -68,16 +68,16 @@ const ICE_SERVER = process.env.ICE_SERVER || 'stun:0.0.0.0:3478';
 
 const ADMIN_PUBLIC_KEY_BYTES = publicKeyStringToBytes(process.env.ADMIN_PUBLIC_KEY || 'EWVQXREUTMLMDHXINHYJKSLTNIFBMZQPYNIFGFXGJBODGJHCFSSOKJZCOBOH');
 
-const NUMBER_OF_NEURONS = process.env.NUMBER_OF_NEURONS || 262144;
-const SOLUTION_THRESHOLD = process.env.SOLUTION_THRESHOLD || 28;
+const NUMBER_OF_NEURONS = process.env.NUMBER_OF_NEURONS || 1048576;
+const SOLUTION_THRESHOLD = process.env.SOLUTION_THRESHOLD || 27;
 const SEED_A = process.env.SEED_A || 159;
 const SEED_B = process.env.SEED_B || 87;
 const SEED_C = process.env.SEED_C || 115;
-const SEED_D = process.env.SEED_D || 132;
-const SEED_E = process.env.SEED_E || 132;
+const SEED_D = process.env.SEED_D || 131;
+const SEED_E = process.env.SEED_E || 133;
 const SEED_F = process.env.SEED_F || 86;
 const SEED_G = process.env.SEED_G || 13;
-const SEED_H = process.env.SEED_H || 101;
+const SEED_H = process.env.SEED_H || 106;
 
 
 MESSAGE_TYPES.EXCHANGE_PUBLIC_PEERS = 0;
@@ -85,6 +85,7 @@ MESSAGE_TYPES.REQUEST_COMPUTORS = 11;
 MESSAGE_TYPES.REQUEST_QUORUM_TICK = 14;
 
 const gateway = function () {
+  let tick = 0;
   const store = {
     resourceTestSolutions: new Map(),
     ticks: Array(NUMBER_OF_COMPUTORS),
@@ -204,7 +205,7 @@ const gateway = function () {
       quorumTickRequest[`writeUint${SIZE_LENGTH * 8}LE`](quorumTickRequest.byteLength, SIZE_OFFSET);
       quorumTickRequest[`writeUint${PROTOCOL_VERSION_LENGTH * 8}LE`](QUBIC_PROTOCOL, PROTOCOL_VERSION_OFFSET);
       quorumTickRequest[`writeUint${TYPE_LENGTH * 8}LE`](MESSAGE_TYPES.REQUEST_QUORUM_TICK, TYPE_OFFSET);
-      quorumTickRequest[`writeUint${4 * 8}LE`](4910040, TYPE_OFFSET + TYPE_LENGTH);
+      quorumTickRequest[`writeUint${4 * 8}LE`](tick, TYPE_OFFSET + TYPE_LENGTH);
       socket.write(quorumTickRequest);
     }
 
@@ -301,10 +302,16 @@ const gateway = function () {
         const computorIndex = message[`readUint${TICK_COMPUTOR_INDEX_LENGTH * 8}LE`](TICK_COMPUTOR_INDEX_OFFSET);
         if (system.computors[computorIndex] !== undefined) {
           if (schnorrq.verify(system.computors[computorIndex], digest, message.slice(message.length - crypto.SIGNATURE_LENGTH, message.length)) === 1) {
-            store.ticks[computorIndex] = toUint8Array(message);
-            network.broadcast(toUint8Array(message), function () {
-              numberOfOutboundWebRTCRequests++;
-            });
+            const receivedTick = message[`readUint${TICK_TICK_LENGTH * 8}LE`](TICK_TICK_OFFSET);
+            if (receivedTick > tick) {
+              tick = receivedTick;
+            }
+            if (receivedTick >= tick) { 
+              store.ticks[computorIndex] = toUint8Array(message);
+              network.broadcast(toUint8Array(message), function () {
+                numberOfOutboundWebRTCRequests++;
+              });
+            }
           } else {
             destroyFaultyConnection();
           }
@@ -344,7 +351,9 @@ const gateway = function () {
         numberOfOutboundComputorRequests++;
         requestComputors();
         setTimeout(function () {
-          requestQuorumTick();
+          if (tick > 0) {
+            requestQuorumTick();
+          }
         }, 1000);
       }, 15 * 1000);
     });
