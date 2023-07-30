@@ -8,9 +8,9 @@ importers:
       qubic-crypto: workspace:*
       qubic-gossip: workspace:*
     dependencies:
-      qubic-converter: link:../converter
-      qubic-crypto: link:../crypto
-      qubic-gossip: link:../gossip
+      qubic-converter: file:../converter
+      qubic-crypto: file:../crypto
+      qubic-gossip: file:../gossip
 
   converter:
     specifiers: {}
@@ -41,8 +41,8 @@ importers:
       ws: ^8.12.0
     dependencies:
       isomorphic-ws: 5.0.0_ws@8.12.0
-      qubic-converter: link:../converter
-      qubic-crypto: link:../crypto
+      qubic-converter: file:../converter
+      qubic-crypto: file:../crypto
       wrtc: 0.4.7
       ws: 8.12.0
 
