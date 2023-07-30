@@ -26,10 +26,10 @@ importers:
       qubic-gossip: workspace:*
       ws: ^8.12.0
     dependencies:
-      '451': link:../451
-      qubic-converter: link:../converter
-      qubic-crypto: link:../crypto
-      qubic-gossip: link:../gossip
+      '451': file:../451
+      qubic-converter: file:../converter
+      qubic-crypto: file:../crypto
+      qubic-gossip: file:../gossip
       ws: 8.12.0
 
   gossip:
